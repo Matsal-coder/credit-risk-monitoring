@@ -5,5 +5,9 @@
 __pycache__/
 *.py[cod]
 
-# Metadados de instalação do pacote
+# Metadados de instalacao do pacote
 *.egg-info/
+
+# Ferramentas de testes e qualidade
+.pytest_cache/
+.ruff_cache/
