@@ -1,13 +1,62 @@
-# Ambiente virtual
-.venv/
 
-# Cache do Python
+# ==========================================
+# Ambiente virtual
+# ==========================================
+.venv/
+venv/
+env/
+
+# ==========================================
+# Cache e arquivos temporarios Python
+# ==========================================
 __pycache__/
 *.py[cod]
-
-# Metadados de instalacao do pacote
 *.egg-info/
-
-# Ferramentas de testes e qualidade
 .pytest_cache/
 .ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# ==========================================
+# Dados brutos e processados
+# ==========================================
+/data/raw/
+/data/processed/
+/data/interim/
+/data/external/
+
+# Protecao adicional contra datasets
+*.csv
+*.parquet
+*.feather
+
+# ==========================================
+# Modelos e artefatos gerados
+# ==========================================
+/artifacts/
+/models/
+/reports/generated/
+
+*.joblib
+*.pkl
+*.pickle
+*.onnx
+
+# ==========================================
+# Credenciais e configuracoes locais
+# ==========================================
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+kaggle.json
+
+# ==========================================
+# Arquivos locais de ferramentas
+# ==========================================
+.ipynb_checkpoints/
+.DS_Store
+Thumbs.db
