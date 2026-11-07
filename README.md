@@ -57,10 +57,47 @@ O download, a análise e o tratamento dos dados fazem parte do Bloco 1 e ainda n
 
 Os dados não serão incluídos no repositório Git.
 
+### 4.1. Obtenção dos dados
+
+Fonte: Home Credit Default Risk (Kaggle).
+
+https://www.kaggle.com/competitions/home-credit-default-risk/data
+
+O dataset será obtido manualmente pelo usuário,
+respeitando os termos de uso e as condições
+de acesso disponibilizados pelo Kaggle.
+
+Arquivo inicial utilizado:
+
+- `application_train.csv`
+
+Local esperado:
+
+- `data/raw/application_train.csv`
+
+Procedimento:
+
+1. Acessar a página da competição no Kaggle.
+2. Autenticar-se e aceitar os termos aplicáveis, se exigidos.
+3. Baixar os dados disponibilizados.
+4. Extrair `application_train.csv`.
+5. Salvar o arquivo em `data/raw/`, na raiz do projeto.
+
+Os diretórios e arquivos de dados são ignorados pelo Git.
+
+Não incluir credenciais, tokens, datasets brutos,
+dados processados ou modelos treinados nos commits.
+
+A integridade, estrutura, volume, tipos e distribuição
+do dataset serão verificados na etapa de preparação
+dos dados, antes do treinamento do baseline.
+
 ## 5. Estrutura atual
 
 ```text
 TechChallenge - Fase 4/
+├── docs/
+│   └── architecture.md
 ├── src/
 │   └── credit_risk_monitoring/
 │       └── __init__.py
@@ -72,7 +109,7 @@ TechChallenge - Fase 4/
 └── README.md
 ```
 
-O diretório `docs/` será acrescentado durante a conclusão do Bloco 0.
+Esta estrutura corresponde ao estado versionado após a conclusão do Bloco 0. Os diretórios de dados e artefatos serão criados conforme as etapas do Bloco 1 forem implementadas.
 
 ## 6. Configuração do ambiente
 
@@ -169,21 +206,40 @@ As branches de desenvolvimento não são enviadas ao repositório remoto.
 
 ## 10. Arquitetura
 
-As decisões arquiteturais e os contratos planejados serão documentados em `docs/architecture.md`.
+As decisões arquiteturais e os contratos planejados estão documentados em docs/architecture.md, criado durante o Bloco 0 e atualizado conforme a evolução do projeto.
 
 O projeto utiliza uma abordagem incremental, evitando antecipar dependências e infraestrutura que ainda não possuem utilização prática.
 
 ## 11. Estado atual
 
-O Bloco 0 encontra-se em desenvolvimento.
+**Bloco 0 — Fundação e Arquitetura: concluído em 07/11/2026.**
 
-Funcionalidades implementadas até o momento:
+Componentes implementados e validados:
 
 - Estrutura de pacote Python com layout `src/`.
-- Instalação editável em ambiente virtual.
+- Instalação editável em ambiente virtual isolado.
 - Configuração de pytest.
 - Configuração de Ruff.
 - Smoke test de importação do pacote.
-- Versionamento Git com histórico de commits semânticos.
+- Documentação inicial de arquitetura.
+- Versionamento Git com commits semânticos.
+- Branches do Bloco 0 integradas à `main`.
 
-**Ainda não existe pipeline de treinamento, inferência ou monitoramento funcional.**
+Validações registradas no encerramento do Bloco 0:
+
+- pytest: 1 teste aprovado.
+- Ruff check: aprovado.
+- Ruff format --check: aprovado.
+- pip check: aprovado.
+- Git: `main` sincronizada com `origin/main`, sem alterações pendentes.
+
+**Bloco 1 — Dados e Modelo Baseline: em desenvolvimento.**
+
+A primeira etapa do Bloco 1 consiste em proteger datasets e
+artefatos locais antes da obtenção dos dados.
+
+O dataset selecionado é Home Credit Default Risk (Kaggle),
+iniciando pelo arquivo `application_train.csv`.
+
+Ainda não existe pipeline funcional de treinamento, inferência
+ou monitoramento.
