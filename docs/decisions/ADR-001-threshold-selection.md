@@ -1,9 +1,11 @@
-
 # ADR-001 — Estratégia de seleção do threshold
 
-**Status:** Aceita  
-**Projeto:** Credit Risk Monitoring  
-**Bloco:** 1 — Dados e Modelo Baseline  
+**Status:** Aceita
+
+**Projeto:** Credit Risk Monitoring
+
+**Bloco:** 1 — Dados e Modelo Baseline
+
 **Data:** 08/11/2026
 
 ## 1. Contexto
