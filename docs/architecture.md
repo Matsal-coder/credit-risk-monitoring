@@ -27,31 +27,62 @@ Esses princípios são diretrizes de projeto. Sua aplicação funcional será de
 
 ## 3. Estado atual da implementação
 
-Ao final das etapas de fundação e qualidade do Bloco 0, existem:
+### Bloco 0 — Fundação e arquitetura
 
-- Um pacote Python denominado `credit_risk_monitoring`, organizado sob `src/`.
+Concluído em 07/11/2026.
+
+Componentes implementados:
+
+- Pacote Python `credit_risk_monitoring` com layout `src/`.
 - Configuração de empacotamento pelo `pyproject.toml`.
-- Ambiente virtual Python local `.venv`.
-- Instalação editável do pacote.
-- pytest configurado.
-- Ruff configurado para lint e formatação.
-- Um smoke test de importação.
-- Versionamento Git com commits semânticos.
+- Ambiente virtual `.venv` e instalação editável.
+- pytest e Ruff.
+- Smoke test de importação.
+- Documentação inicial de arquitetura.
+- Versionamento Git com branches locais.
 
-Ainda não existem:
+### Bloco 1 — Dados e modelo baseline
 
-- Dataset processado.
-- Pipeline de treinamento.
-- Modelo treinado ou serializado.
-- Contratos Pandera.
-- Pipeline de inferência.
-- Detecção de drift.
-- Exportador de métricas.
-- Serviços Prometheus ou Grafana.
+Em desenvolvimento.
+
+Componentes implementados na branch `feature/data-preparation`:
+
+- Inspeção exploratória reproduzível do Home Credit.
+- Carregamento do arquivo `application_train.csv`.
+- Verificações estruturais mínimas de entrada.
+- Seleção de 16 variáveis originais.
+- Criação de indicador para `DAYS_EMPLOYED=365243`.
+- Preparação de 17 features preditivas.
+- Particionamento aleatório estratificado e determinístico.
+- Separação entre treino, validação, teste e referência.
+- Persistência local em CSV.
+- Manifesto JSON com hashes e metadados.
+- Testes unitários e de integração.
+
+Validações realizadas:
+
+- 307.511 registros reais processados.
+- 17 testes automatizados aprovados.
+- Ruff check e Ruff format aprovados.
+- Dependências verificadas com pip check.
+- Determinismo das sequências de IDs confirmado em duas
+  execuções com o dataset real.
+- Arquivos processados e artefatos ignorados pelo Git.
+
+Os componentes desta branch ainda não foram integrados
+à `main`.
+
+### Componentes ainda não implementados
+
+- Pipeline Scikit-Learn de preprocessamento aprendido.
+- Treinamento e avaliação do baseline.
+- Modelo treinado e serializado.
+- Contratos Pandera e bloqueio de lotes.
+- Pipeline de inferência operacional.
+- Simulação e detecção de drift.
+- Instrumentação Prometheus e Grafana.
 - Infraestrutura Docker Compose.
-- Rotinas de monitoramento em produção.
-
-A descrição dos próximos componentes não representa sua implementação.
+- Rotinas de monitoramento de produção.
 
 ## 4. Decisões técnicas aprovadas
 
@@ -325,8 +356,221 @@ Mudanças arquiteturais relevantes deverão ser discutidas com o Chat Arquiteto 
 
 ## 11. Continuidade
 
-O próximo bloco será responsável por introduzir o dataset Home Credit, realizar sua preparação e construir o primeiro baseline de classificação.
+O Bloco 1 está organizado em branches incrementais.
 
-O Bloco 1 deverá utilizar a fundação existente e evitar alterações desnecessárias nas decisões de empacotamento, testes e fluxo Git.
+### Branch 1 — `chore/data-safety`
 
-As interfaces e os caminhos dos novos componentes deverão ser definidos durante sua implementação e registrados na documentação.
+Concluída e integrada à `main`.
+
+Entregas:
+
+- Proteção de datasets e artefatos pelo `.gitignore`.
+- Atualização do README após o Bloco 0.
+- Documentação de obtenção do Home Credit.
+
+Commit de implementação: `9711076`.
+
+Commit de merge: `5cb487d`.
+
+### Branch 2 — `feature/data-preparation`
+
+Em desenvolvimento.
+
+Responsável por:
+
+- Inspeção e carregamento dos dados.
+- Seleção inicial de features.
+- Tratamento determinístico da sentinela.
+- Particionamento estratificado.
+- Persistência dos conjuntos e metadados.
+- Testes de preparação e integridade.
+
+### Branch 3 — `feature/credit-baseline`
+
+Planejada.
+
+Responsável por:
+
+- Pipeline Scikit-Learn.
+- Imputação, encoding e scaling.
+- Regressão logística.
+- Avaliação e seleção de threshold.
+- Serialização do modelo e metadados.
+
+Ajustes estatísticos deverão utilizar exclusivamente
+os dados autorizados para cada finalidade.
+
+### Branch 4 — `docs/baseline-reproducibility`
+
+Planejada.
+
+Responsável por consolidar documentação, comandos
+de reprodução, evidências e contratos finais do Bloco 1.
+
+O Bloco 2 deverá receber o contrato de entrada dos dados,
+enquanto o Bloco 3 utilizará a referência de monitoramento
+e o pipeline treinado para produzir scores.
+
+## 12. Contratos implementados de preparação
+
+### 12.1 Dataset de origem
+
+Fonte: Home Credit Default Risk, Kaggle.
+
+Arquivo: `data/raw/application_train.csv`.
+
+Dimensões verificadas: 307.511 linhas e 122 colunas.
+
+Identificador: `SK_ID_CURR`.
+
+Alvo: `TARGET`, com valores 0 e 1.
+
+Prevalência positiva observada: aproximadamente 8,07%.
+
+Dados brutos não são versionados no Git.
+
+### 12.2 Features do baseline
+
+São utilizadas 16 features originais:
+
+Numéricas:
+
+- `AMT_CREDIT`
+- `AMT_INCOME_TOTAL`
+- `AMT_ANNUITY`
+- `AMT_GOODS_PRICE`
+- `EXT_SOURCE_2`
+- `EXT_SOURCE_3`
+- `DAYS_BIRTH`
+- `DAYS_EMPLOYED`
+- `DAYS_REGISTRATION`
+- `CNT_CHILDREN`
+- `CNT_FAM_MEMBERS`
+
+Categóricas:
+
+- `NAME_INCOME_TYPE`
+- `NAME_EDUCATION_TYPE`
+- `FLAG_OWN_CAR`
+- `FLAG_OWN_REALTY`
+- `NAME_CONTRACT_TYPE`
+
+Feature derivada:
+
+- `DAYS_EMPLOYED_SENTINEL`
+
+Total: 17 features preditivas.
+
+`SK_ID_CURR` e `TARGET` não são features do modelo.
+
+A ordem oficial das features é definida pela constante
+`MODEL_FEATURES` em `data/preparation.py`.
+
+### 12.3 Tratamento da sentinela
+
+O valor `365243` em `DAYS_EMPLOYED` representa
+um código especial e não uma duração válida.
+
+A preparação:
+
+1. Identifica registros com esse valor.
+2. Cria `DAYS_EMPLOYED_SENTINEL` com valores 0 ou 1.
+3. Substitui a sentinela por NaN em `DAYS_EMPLOYED`.
+
+A imputação estatística ainda não é realizada.
+
+### 12.4 Particionamento
+
+Estratégia: divisão aleatória estratificada por TARGET.
+
+Seed padrão: 42.
+
+| Partição | Percentual | Registros |
+|---|---:|---:|
+| train | 60% | 184.506 |
+| validation | 15% | 46.127 |
+| test | 15% | 46.127 |
+| reference | 10% | 30.751 |
+
+As quantidades correspondem ao dataset real inspecionado.
+
+As partições são disjuntas e cobrem todos os registros.
+
+O particionamento não representa uma divisão temporal.
+
+### 12.5 Persistência
+
+Arquivos de saída:
+
+- `data/processed/train.csv`
+- `data/processed/validation.csv`
+- `data/processed/test.csv`
+- `data/processed/reference.csv`
+- `artifacts/data_manifest.json`
+
+Treino, validação e teste possuem 19 colunas:
+identificador, TARGET e 17 features.
+
+A referência possui 18 colunas:
+identificador e 17 features, sem TARGET.
+
+O manifesto registra:
+
+- Nome, hash e dimensões do dataset de origem.
+- Seed e proporções dos splits.
+- Lista ordenada de features.
+- Tratamento de sentinela.
+- Versões das bibliotecas.
+- Quantidade de registros por partição.
+- Colunas presentes nos arquivos.
+- Prevalência original de TARGET por partição.
+- Hash SHA-256 de cada CSV.
+
+A prevalência da referência consta somente nos metadados
+offline, não no CSV disponibilizado para monitoramento.
+
+### 12.6 Interfaces Python
+
+Módulo:
+
+`credit_risk_monitoring.data.preparation`
+
+Funções:
+
+- `load_dataset(path)`: lê e verifica o CSV.
+- `validate_source(df)`: aplica verificações estruturais.
+- `prepare_features(df)`: seleciona e transforma features.
+- `split_dataset(df, random_state=42)`: gera quatro partições.
+- `validate_partitions(partitions, expected_size)`: verifica
+  cobertura e ausência de sobreposição.
+
+Os entrypoints locais são:
+
+- `scripts/inspect_dataset.py`
+- `scripts/prepare_dataset.py`
+
+### 12.7 Limitações e próximas evoluções
+
+As verificações existentes não substituem contratos Pandera.
+
+O carregamento não executa validação semântica completa
+de intervalos, infinitos ou categorias inesperadas.
+
+Os CSVs contêm informações derivadas de dados cadastrais
+e devem permanecer protegidos contra publicação indevida.
+
+A persistência atual não é transacional. Uma execução
+interrompida pode exigir a regeneração dos arquivos.
+
+O Bloco 2 deverá validar a entrada antes de qualquer
+transformação que possa mascarar problemas de qualidade.
+
+O Bloco 3 deverá utilizar a referência para monitoramento
+de distribuições, sem interpretá-la como produção temporal.
+
+A disponibilidade real e a semântica das variáveis
+EXT_SOURCE deverão ser verificadas em qualquer aplicação
+fora do cenário acadêmico.
+
+O uso de atributos como idade e educação exige avaliação
+posterior de governança, equidade e conformidade.
