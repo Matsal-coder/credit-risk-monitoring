@@ -440,3 +440,16 @@ final, não como oportunidade para reajustar o modelo.
 
 O modelo e os resultados são armazenados localmente
 no diretório `artifacts/`, ignorado pelo Git.
+
+### 12.8. Guia completo de reprodutibilidade
+
+O procedimento ponta a ponta para reproduzir a
+preparação, o treinamento, a avaliação e a
+persistência do baseline está documentado em:
+
+[Guia de reprodutibilidade](docs/reproducibility.md)
+
+O guia registra o ambiente de referência, as
+partições, os hashes, as métricas oficiais,
+as verificações de integridade e as limitações
+conhecidas do Bloco 1.
