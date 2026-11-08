@@ -53,7 +53,7 @@ O dataset escolhido é o **Home Credit Default Risk**, disponibilizado no Kaggle
 
 A implementação começará pelo arquivo `application_train.csv`.
 
-O download, a análise e o tratamento dos dados fazem parte do Bloco 1 e ainda não foram realizados.
+O arquivo application_train.csv foi obtido e inspecionado no Bloco 1. A preparação determinística e a geração das partições foram implementadas e validadas com os 307.511 registros reais. Os dados brutos e processados permanecem locais e ignorados pelo Git.
 
 Os dados não serão incluídos no repositório Git.
 
@@ -235,11 +235,152 @@ Validações registradas no encerramento do Bloco 0:
 
 **Bloco 1 — Dados e Modelo Baseline: em desenvolvimento.**
 
-A primeira etapa do Bloco 1 consiste em proteger datasets e
-artefatos locais antes da obtenção dos dados.
+A branch `chore/data-safety` foi concluída e integrada à `main`.
 
-O dataset selecionado é Home Credit Default Risk (Kaggle),
-iniciando pelo arquivo `application_train.csv`.
+A branch `feature/data-preparation` implementou:
 
-Ainda não existe pipeline funcional de treinamento, inferência
-ou monitoramento.
+- Inspeção exploratória do Home Credit.
+- Carregamento e verificações estruturais.
+- Seleção de 16 features originais.
+- Tratamento da sentinela `DAYS_EMPLOYED=365243`.
+- Criação de uma feature indicadora, totalizando 17.
+- Divisão determinística e estratificada dos dados.
+- Persistência de quatro partições em CSV.
+- Manifesto JSON com hashes e metadados.
+- Verificação de integridade dos artefatos.
+- Testes unitários e de integração.
+
+A execução real gerou 184.506 registros de treino,
+46.127 de validação, 46.127 de teste e 30.751
+de referência.
+
+O treinamento, a avaliação e a serialização do modelo
+ainda não foram implementados.
+
+## 12. Reprodução da preparação dos dados
+
+### 12.1. Pré-requisitos
+
+- Python 3.12.
+- Ambiente virtual `.venv` ativado.
+- Dependências instaladas com `pip install -e ".[dev]"`.
+- Arquivo `data/raw/application_train.csv` disponível.
+
+Todos os comandos devem ser executados na raiz do projeto.
+
+### 12.2. Inspeção exploratória
+
+```bash
+python scripts/inspect_dataset.py
+```
+
+Saída:
+
+`artifacts/inspection_summary.json`
+
+Contém dimensões, perfil das colunas, distribuição
+do TARGET, nulos, identificadores e sentinelas.
+
+### 12.3. Preparação e particionamento
+
+```bash
+python scripts/prepare_dataset.py
+```
+
+Parâmetros opcionais:
+
+- `--input`: arquivo CSV de origem.
+- `--output-dir`: diretório dos conjuntos processados.
+- `--manifest`: caminho do manifesto JSON.
+- `--seed`: seed do particionamento; padrão 42.
+
+Saídas:
+
+```text
+data/processed/
+├── train.csv
+├── validation.csv
+├── test.csv
+└── reference.csv
+
+artifacts/
+├── inspection_summary.json
+└── data_manifest.json
+```
+
+Os conjuntos são estratificados pelo TARGET.
+
+Proporções:
+
+- Treino: 60%.
+- Validação: 15%.
+- Teste: 15%.
+- Referência: 10%.
+
+Treino, validação e teste contêm `SK_ID_CURR`,
+`TARGET` e 17 features preditivas.
+
+A referência contém `SK_ID_CURR` e 17 features,
+sem TARGET.
+
+Nenhum dos arquivos de dados é versionado no Git.
+
+### 12.4. Verificação de integridade
+
+```bash
+python scripts/verify_dataset.py
+```
+
+O verificador compara os arquivos com o manifesto,
+incluindo hashes SHA-256, estrutura, quantidade
+de registros e identificadores.
+
+A validação retorna código de saída diferente de
+zero quando encontra uma inconsistência tratada.
+
+O manifesto é uma referência local de integridade,
+não uma assinatura digital autenticada.
+
+### 12.5. Testes e qualidade
+
+```bash
+python -m pytest -v
+python -m ruff check .
+python -m ruff format --check .
+python -m pip check
+```
+
+### 12.6. Decisões e limitações
+
+As 17 features são definidas pela constante
+`MODEL_FEATURES` do módulo de preparação.
+
+`SK_ID_CURR` e `TARGET` não devem entrar como
+variáveis preditivas.
+
+A sentinela `365243` de `DAYS_EMPLOYED` é
+substituída por NaN e acompanhada de um indicador.
+
+A imputação estatística, o encoding e o scaling
+serão implementados no pipeline do modelo,
+com ajuste restrito aos dados de treino.
+
+As partições são aleatórias e não representam
+uma separação cronológica de produção.
+
+O conjunto de referência foi reservado para
+monitoramento e não deve ser utilizado para
+treinamento ou escolha de threshold.
+
+A validação estrutural existente não substitui
+contratos Pandera, previstos para o Bloco 2.
+
+Os CSVs podem conter informações cadastrais
+e devem permanecer protegidos.
+
+A persistência não é transacional; uma execução
+interrompida pode exigir regeneração e nova
+verificação dos artefatos.
+
+A arquitetura e os contratos detalhados estão
+documentados em `docs/architecture.md`.
