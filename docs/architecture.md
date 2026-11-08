@@ -574,3 +574,198 @@ fora do cenário acadêmico.
 
 O uso de atributos como idade e educação exige avaliação
 posterior de governança, equidade e conformidade.
+
+## 13. Estratégia de seleção do threshold
+
+O baseline utiliza inicialmente a maximização do F1-score
+no conjunto de validação para selecionar o threshold.
+
+Essa decisão foi tomada para manter simplicidade,
+reprodutibilidade e foco nos critérios centrais
+do Tech Challenge.
+
+O F1 não representa uma função de perda econômica
+ou rentabilidade de concessão de crédito.
+
+Uma futura evolução poderá substituir a função objetivo
+por custo de classificação ou utilidade econômica,
+preservando o pipeline preditivo quando apropriado.
+
+A justificativa, as alternativas e o plano de evolução
+estão registrados em:
+
+`docs/decisions/ADR-001-threshold-selection.md`
+
+## 14. Baseline de classificação implementado
+
+### 14.1. Pipeline de modelagem
+
+O baseline utiliza LogisticRegression do Scikit-Learn,
+integrada ao preprocessamento por um Pipeline.
+
+As 17 features são divididas em:
+
+- 11 numéricas: imputação pela mediana e StandardScaler.
+- 5 categóricas: imputação pela moda e OneHotEncoder.
+- 1 indicador binário: preservado sem scaling.
+
+O preprocessamento é ajustado somente no treino.
+
+Configuração do classificador:
+
+- Solver: lbfgs.
+- max_iter: 1000.
+- class_weight: None.
+- random_state: 42.
+
+Na execução real, o modelo convergiu em 34 iterações,
+sem ConvergenceWarning.
+
+### 14.2. Protocolo de avaliação
+
+Partições utilizadas:
+
+- Treino: 184.506 registros.
+- Validação: 46.127 registros.
+- Teste: 46.127 registros.
+
+Procedimento:
+
+1. Ajustar o modelo exclusivamente no treino.
+2. Selecionar o threshold pelo F1 na validação.
+3. Fixar o threshold.
+4. Avaliar o modelo no teste independente.
+5. Salvar o pipeline e os metadados.
+
+O threshold selecionado foi:
+
+0.1406724340221902
+
+A justificativa dessa escolha está documentada
+em `docs/decisions/ADR-001-threshold-selection.md`.
+
+### 14.3. Resultados oficiais
+
+| Métrica | Validação | Teste |
+|---|---:|---:|
+| ROC-AUC | 0.734523 | 0.736332 |
+| Average Precision | 0.218251 | 0.214999 |
+| Precision | 0.226404 | 0.223766 |
+| Recall | 0.407089 | 0.397959 |
+| F1-score | 0.290979 | 0.286460 |
+
+Matriz de confusão no teste:
+
+- TN: 37.262.
+- FP: 5.141.
+- FN: 2.242.
+- TP: 1.482.
+
+Esses resultados representam avaliação offline
+em partição aleatória do Home Credit.
+
+Não representam validação temporal, performance
+em produção ou resultado econômico de uma política
+real de concessão de crédito.
+
+### 14.4. Artefatos
+
+Modelo:
+
+`artifacts/baseline_model.joblib`
+
+Métricas:
+
+`artifacts/baseline_metrics.json`
+
+O arquivo joblib contém um dicionário com:
+
+- `pipeline`: Pipeline Scikit-Learn ajustado.
+- `metadata`: configurações, features, threshold,
+  versões das bibliotecas e hashes de proveniência.
+
+O JSON registra:
+
+- Metadados do modelo.
+- Estratégia de seleção do threshold.
+- Métricas da validação e do teste.
+- Diagnósticos de treinamento.
+
+Os arquivos são locais e ignorados pelo Git.
+
+Arquivos joblib devem ser carregados somente
+quando sua origem for confiável.
+
+### 14.5. Contrato de inferência
+
+O pipeline recebe as 17 features definidas em
+`MODEL_FEATURES`, já submetidas às transformações
+determinísticas de preparação.
+
+Não recebe TARGET ou SK_ID_CURR como preditores.
+
+A inferência foi validada nos 30.751 registros
+de `data/processed/reference.csv`, sem TARGET.
+
+Resultados observados:
+
+- Score mínimo: 0.002295.
+- Score mediano: 0.058838.
+- Score médio: 0.080922.
+- Score máximo: 0.672701.
+- Taxa de positivos previstos: 14.45%.
+
+O modelo persistido gerou probabilidades válidas,
+com os metadados consistentes com o JSON.
+
+Essa referência foi obtida por divisão aleatória
+da mesma população histórica. Ela não comprova
+ausência de drift em produção.
+
+### 14.6. Interfaces implementadas
+
+Módulos:
+
+- `credit_risk_monitoring.modeling.pipeline`
+- `credit_risk_monitoring.modeling.training`
+- `credit_risk_monitoring.modeling.finalization`
+
+Funções principais:
+
+- `build_preprocessor()`
+- `build_baseline_pipeline()`
+- `train_baseline()`
+- `evaluate_probabilities()`
+- `select_threshold_by_f1()`
+- `evaluate_final_model()`
+- `save_final_model()`
+
+Entrypoints:
+
+- `scripts/train_baseline.py`
+- `scripts/finalize_baseline.py`
+
+### 14.7. Continuidade
+
+Bloco 2 — Pandera:
+
+Validar as features antes do preprocessamento.
+Distinguir entradas obrigatórias, nulos permitidos,
+tipos, sentinelas e regras semânticas de qualidade.
+
+Bloco 3 — Evidently:
+
+Utilizar a referência não rotulada e o pipeline
+persistido para avaliar distribuições de features
+e scores em lotes de produção simulados.
+
+A comparação de distribuições deverá considerar
+a natureza histórica e aleatória da referência.
+
+Bloco 4 — Observabilidade:
+
+Instrumentar execução, resultados de validação,
+inferência, falhas e métricas operacionais.
+
+Não reajustar automaticamente o modelo ou o
+threshold como consequência de um alerta de drift.

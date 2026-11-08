@@ -257,6 +257,39 @@ de referência.
 O treinamento, a avaliação e a serialização do modelo
 ainda não foram implementados.
 
+### Baseline de classificação
+
+O baseline foi implementado com LogisticRegression
+e Pipeline do Scikit-Learn.
+
+O modelo foi treinado com 184.506 registros e
+avaliado em 46.127 registros de teste independente.
+
+Resultados no teste:
+
+- ROC-AUC: 0,7363.
+- Average Precision: 0,2150.
+- Precision: 22,38%.
+- Recall: 39,80%.
+- F1-score: 0,2865.
+
+O threshold de 0,140672434 foi selecionado
+exclusivamente na validação, pela maximização do F1.
+
+O pipeline completo foi salvo em
+`artifacts/baseline_model.joblib`, e as métricas
+em `artifacts/baseline_metrics.json`.
+
+A inferência com o modelo persistido foi validada
+nos 30.751 registros não rotulados da referência.
+
+A justificativa da seleção do threshold está
+em `docs/decisions/ADR-001-threshold-selection.md`.
+
+A consolidação da reprodutibilidade do Bloco 1
+será realizada na branch documental seguinte.
+
+
 ## 12. Reprodução da preparação dos dados
 
 ### 12.1. Pré-requisitos
@@ -384,3 +417,26 @@ verificação dos artefatos.
 
 A arquitetura e os contratos detalhados estão
 documentados em `docs/architecture.md`.
+
+### 12.7. Treinamento e avaliação do baseline
+
+Para executar o diagnóstico na validação:
+
+```bash
+python scripts/train_baseline.py
+```
+
+Para executar o protocolo completo de treinamento,
+seleção de threshold, avaliação final e persistência:
+
+```bash
+python scripts/verify_dataset.py
+python scripts/finalize_baseline.py
+```
+
+O segundo procedimento acessa o conjunto de teste.
+Seus resultados devem ser tratados como avaliação
+final, não como oportunidade para reajustar o modelo.
+
+O modelo e os resultados são armazenados localmente
+no diretório `artifacts/`, ignorado pelo Git.
