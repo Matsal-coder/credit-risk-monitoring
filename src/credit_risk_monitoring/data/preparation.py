@@ -103,18 +103,29 @@ def load_dataset(path: Path) -> pd.DataFrame:
     return df
 
 
-def prepare_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Seleciona features e trata a sentinela de emprego."""
+def transform_employment_sentinel(df: pd.DataFrame) -> pd.DataFrame:
+    """Aplica o tratamento deterministico da sentinela de emprego.
 
-    validate_source(df)
-
-    result = df.loc[:, REQUIRED_COLUMNS].copy()
+    Nao modifica o dataframe original.
+    Nulos originalmente presentes permanecem nulos, com indicador zero.
+    """
+    result = df.copy()
 
     sentinel = result["DAYS_EMPLOYED"].eq(365243)
 
     result["DAYS_EMPLOYED_SENTINEL"] = sentinel.astype("int8")
 
     result["DAYS_EMPLOYED"] = result["DAYS_EMPLOYED"].mask(sentinel).astype("float64")
+
+    return result
+
+
+def prepare_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Seleciona features e trata a sentinela de emprego."""
+    validate_source(df)
+
+    result = df.loc[:, REQUIRED_COLUMNS].copy()
+    result = transform_employment_sentinel(result)
 
     return result.loc[
         :,
