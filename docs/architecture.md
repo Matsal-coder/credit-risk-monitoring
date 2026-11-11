@@ -27,62 +27,109 @@ Esses princípios são diretrizes de projeto. Sua aplicação funcional será de
 
 ## 3. Estado atual da implementação
 
+O projeto é desenvolvido incrementalmente, com componentes
+funcionais integrados à `main` após testes e revisão.
+
 ### Bloco 0 — Fundação e arquitetura
 
-Concluído em 07/11/2026.
+**Estado: concluído.**
 
 Componentes implementados:
 
-- Pacote Python `credit_risk_monitoring` com layout `src/`.
-- Configuração de empacotamento pelo `pyproject.toml`.
-- Ambiente virtual `.venv` e instalação editável.
+- Pacote Python com layout `src/`.
+- Empacotamento com setuptools e `pyproject.toml`.
+- Ambiente virtual `.venv`.
+- Instalação editável.
 - pytest e Ruff.
-- Smoke test de importação.
-- Documentação inicial de arquitetura.
-- Versionamento Git com branches locais.
+- Estrutura de documentação.
+- Fluxo Git com branches locais.
 
 ### Bloco 1 — Dados e modelo baseline
 
-Em desenvolvimento.
+**Estado: concluído.**
 
-Componentes implementados na branch `feature/data-preparation`:
+Componentes implementados:
 
-- Inspeção exploratória reproduzível do Home Credit.
-- Carregamento do arquivo `application_train.csv`.
-- Verificações estruturais mínimas de entrada.
-- Seleção de 16 variáveis originais.
-- Criação de indicador para `DAYS_EMPLOYED=365243`.
-- Preparação de 17 features preditivas.
-- Particionamento aleatório estratificado e determinístico.
-- Separação entre treino, validação, teste e referência.
-- Persistência local em CSV.
-- Manifesto JSON com hashes e metadados.
+- Inspeção do Home Credit Default Risk.
+- Preparação determinística das features.
+- Tratamento da sentinela `DAYS_EMPLOYED=365243`.
+- Particionamento estratificado com seed 42.
+- Verificação de integridade com manifesto e hashes.
+- Pipeline Scikit-Learn com LogisticRegression.
+- Seleção de threshold por F1 na validação.
+- Avaliação independente no teste.
+- Persistência do modelo e seus metadados.
+
+O modelo utiliza 17 features preditivas.
+
+Threshold oficial:
+
+`0.1406724340221902`
+
+Resultados de teste:
+
+- ROC-AUC: 0.736332.
+- Average Precision: 0.214999.
+- Precision: 0.223766.
+- Recall: 0.397959.
+- F1: 0.286460.
+
+A implementação foi concluída com 42 testes aprovados.
+
+### Bloco 2 — Contratos e inferência bloqueante
+
+**Estado: implementação funcional concluída.**
+
+Componentes implementados:
+
+- Contratos Pandera para entrada bruta e preparada.
+- Regras rígidas de qualidade.
+- Tratamento explícito de nulidades.
+- Resultados estruturados de validação.
+- Preparação de lotes sem TARGET.
+- Reutilização da transformação de sentinela.
+- Inferência com barreira bloqueante.
+- Carregamento do baseline persistido.
+- Interface operacional `scripts/score_batch.py`.
+- Relatórios JSON de aprovação e rejeição.
+- CSV opcional com probabilidades individuais.
 - Testes unitários e de integração.
 
-Validações realizadas:
+A barreira impede que lotes rejeitados cheguem
+ao modelo.
 
-- 307.511 registros reais processados.
-- 17 testes automatizados aprovados.
-- Ruff check e Ruff format aprovados.
+A validação ocorre antes do carregamento do
+artefato e antes de `predict_proba()`.
+
+Os resultados são estruturados para permitir
+instrumentação futura.
+
+As implementações funcionais foram integradas
+à `main` nos seguintes commits:
+
+- Contratos Pandera: `e265a12`.
+- Inferência bloqueante: `9141612`.
+
+Após a integração funcional:
+
+- 114 testes automatizados aprovados.
+- Ruff lint e formatação aprovados.
 - Dependências verificadas com pip check.
-- Determinismo das sequências de IDs confirmado em duas
-  execuções com o dataset real.
-- Arquivos processados e artefatos ignorados pelo Git.
+- Demonstrações de aprovação e rejeição executadas.
+- Integridade dos dados preparados verificada.
 
-Os componentes desta branch ainda não foram integrados
-à `main`.
+A documentação final do Bloco 2 está sendo
+consolidada na branch `docs/data-quality-evidence`.
 
-### Componentes ainda não implementados
+### Blocos ainda não implementados
 
-- Pipeline Scikit-Learn de preprocessamento aprendido.
-- Treinamento e avaliação do baseline.
-- Modelo treinado e serializado.
-- Contratos Pandera e bloqueio de lotes.
-- Pipeline de inferência operacional.
-- Simulação e detecção de drift.
-- Instrumentação Prometheus e Grafana.
-- Infraestrutura Docker Compose.
-- Rotinas de monitoramento de produção.
+- Bloco 3: simulação de produção e detecção de drift.
+- Bloco 4: métricas, Prometheus, Grafana e observabilidade.
+- Bloco 5: governança e privacidade consolidadas.
+- Bloco 6: integração final e demonstração.
+
+Nenhum desses componentes deve ser descrito
+como operacional antes de sua implementação.
 
 ## 4. Decisões técnicas aprovadas
 
@@ -275,7 +322,8 @@ As execuções deverão possuir um identificador que permita correlacionar:
 - Logs e eventos operacionais.
 - Métricas e alertas associados.
 
-O nome e a implementação desse identificador ainda não foram definidos.
+O Bloco 2 adotou batch_id como identificador operacional das validações e inferências.
+Sua utilização por métricas, eventos de drift e alertas será definida nos blocos posteriores.
 
 ### 7.4 Contrato de separação de dados
 
@@ -354,7 +402,14 @@ Cada bloco futuro deverá preservar os contratos aprovados ou justificar formalm
 
 Mudanças arquiteturais relevantes deverão ser discutidas com o Chat Arquiteto antes de sua implementação.
 
-## 11. Continuidade
+## 11. Histórico de desenvolvimento dos blocos anteriores
+
+
+> **Nota histórica:** esta seção preserva o planejamento
+> incremental registrado durante o Bloco 1. As referências
+> a branches em desenvolvimento ou planejadas representam
+> o estado da época, não o estado atual do repositório.
+> Para o estado consolidado, consultar a seção 3.
 
 O Bloco 1 está organizado em branches incrementais.
 
@@ -412,6 +467,10 @@ enquanto o Bloco 3 utilizará a referência de monitoramento
 e o pipeline treinado para produzir scores.
 
 ## 12. Contratos implementados de preparação
+
+**Contexto histórico:** esta seção documenta os contratos de preparação desenvolvidos durante o Bloco 1.
+As referências a funcionalidades ainda não implementadas refletem aquele estágio.
+Para os contratos de inferência implementados no Bloco 2, consultar a seção 15 e docs/quality-contracts.md.
 
 ### 12.1 Dataset de origem
 
@@ -749,9 +808,12 @@ Entrypoints:
 
 Bloco 2 — Pandera:
 
-Validar as features antes do preprocessamento.
-Distinguir entradas obrigatórias, nulos permitidos,
-tipos, sentinelas e regras semânticas de qualidade.
+Foram implementados contratos para entrada bruta
+e preparada, regras de nulidade e consistência,
+resultados estruturados e inferência bloqueante.
+
+Os detalhes estão registrados na seção 15 e
+em docs/quality-contracts.md.
 
 Bloco 3 — Evidently:
 
@@ -769,3 +831,232 @@ inferência, falhas e métricas operacionais.
 
 Não reajustar automaticamente o modelo ou o
 threshold como consequência de um alerta de drift.
+
+## 15. Arquitetura implementada — Bloco 2
+
+### 15.1. Objetivo
+
+O Bloco 2 implementa uma camada de validação
+bloqueante antes da inferência do baseline de crédito.
+
+A solução utiliza Pandera para validar lotes
+em dois estágios distintos, preservando a
+preparação e o modelo do Bloco 1.
+
+### 15.2. Fluxo operacional
+
+```text id="i3g23o"
+LOTE BRUTO SEM TARGET
+         |
+         v
+VALIDAÇÃO PANDERA — RAW
+         |
+         +---- REJEITADO ----> RELATÓRIO SEM SCORES
+         |
+         v
+PREPARAÇÃO DETERMINÍSTICA
+         |
+         v
+VALIDAÇÃO PANDERA — PREPARED
+         |
+         +---- REJEITADO ----> RELATÓRIO SEM SCORES
+         |
+         v
+CARREGAMENTO DO MODELO PERSISTIDO
+         |
+         v
+PREDICT_PROBA
+         |
+         v
+THRESHOLD OFICIAL
+         |
+         v
+RESULTADO OPERACIONAL
+```
+
+O modelo somente é carregado após a aprovação
+dos dois contratos.
+
+### 15.3. Componentes implementados
+
+| Componente | Responsabilidade |
+|---|---|
+| `data/preparation.py` | Preparação histórica e transformação compartilhada da sentinela |
+| `data/inference.py` | Preparação de lotes sem TARGET |
+| `quality/contracts.py` | Definição dos schemas Pandera |
+| `quality/results.py` | Estruturas de resultados de qualidade |
+| `quality/validation.py` | Execução e agregação das validações |
+| `modeling/inference.py` | Inferência com barreira bloqueante |
+| `scripts/score_batch.py` | Interface operacional de scoring |
+
+Os contratos detalhados, nomes das regras e
+políticas de nulidade estão documentados em:
+
+`docs/quality-contracts.md`
+
+### 15.4. Contrato de entrada
+
+A entrada bruta possui:
+
+- `SK_ID_CURR`.
+- 11 features numéricas originais.
+- 5 features categóricas originais.
+
+Não possui TARGET nem indicador derivado.
+
+O contrato utiliza validação rígida de
+estrutura e regras semânticas.
+
+O arquivo de referência produzido pelo Bloco 1
+já contém features preparadas e não deve ser
+passado diretamente ao contrato bruto.
+
+### 15.5. Contrato preparado
+
+A preparação cria a feature:
+
+`DAYS_EMPLOYED_SENTINEL`
+
+O estágio preparado possui identificador
+e 17 features preditivas.
+
+O indicador derivado é verificado quanto
+ao domínio binário e à consistência com
+os valores tratados de DAYS_EMPLOYED.
+
+### 15.6. Resultado de validação
+
+Interface:
+
+`validate_batch(df, stage, batch_id)`
+
+Retorno:
+
+`ValidationResult`
+
+Campos principais:
+
+- batch_id.
+- stage.
+- status.
+- total_rows.
+- violations.
+
+Cada violação contém coluna, regra,
+contagem e severidade.
+
+Valores individuais dos clientes não
+são incluídos nesses resultados.
+
+### 15.7. Inferência protegida
+
+Interface:
+
+`run_quality_gated_inference(df, batch_id, model_path=...)`
+
+Retorno:
+
+`InferenceResult`
+
+O serviço:
+
+1. Executa o contrato bruto.
+2. Rejeita imediatamente violações.
+3. Prepara as features de maneira determinística.
+4. Executa o contrato preparado.
+5. Rejeita violações antes do modelo.
+6. Carrega o baseline persistido.
+7. Executa predict_proba.
+8. Aplica o threshold oficial.
+9. Retorna resultado estruturado.
+
+O identificador SK_ID_CURR não é utilizado
+como variável preditiva.
+
+O serviço não executa fit, retreinamento
+ou seleção de novo threshold.
+
+### 15.8. Interface operacional
+
+O script `scripts/score_batch.py` recebe
+um CSV bruto e produz um relatório JSON.
+
+Opcionalmente, pode produzir um CSV com:
+
+- row_index.
+- probability_default.
+- prediction.
+
+Códigos de saída:
+
+- 0: aprovação e scoring concluído.
+- 2: rejeição por qualidade.
+- 1: erro operacional.
+
+Arquivos existentes não são sobrescritos.
+
+A persistência possui limpeza de melhor esforço
+para falhas de gravação capturadas.
+
+### 15.9. Evidências de funcionamento
+
+O serviço foi testado com o modelo persistido.
+
+Na demonstração operacional:
+
+- Lote válido: cinco scores e relatório de aprovação.
+- Lote inválido: zero scores e relatório de rejeição.
+- Regra demonstrada: positive_credit.
+- Threshold preservado: 0.1406724340221902.
+
+Os testes automatizados também comprovam
+que a rejeição impede o carregamento do modelo
+e a chamada a predict_proba.
+
+Após o merge funcional, 114 testes foram aprovados.
+
+### 15.10. Contratos preservados
+
+O Bloco 2 preserva:
+
+- Dataset original.
+- Particionamento e seed.
+- Seleção de 17 features.
+- Tratamento histórico da sentinela.
+- Pipeline Scikit-Learn.
+- Modelo persistido.
+- Threshold oficial.
+- Protocolo de avaliação do Bloco 1.
+
+A transformação da sentinela foi extraída
+para uma função compartilhada, com testes
+de regressão de compatibilidade.
+
+### 15.11. Continuidade
+
+Bloco 3:
+
+Utilizar os contratos e a inferência
+como componentes de entrada para a
+simulação de produção e o monitoramento
+estatístico de drift.
+
+Bloco 4:
+
+Consumir os resultados estruturados
+de validação e inferência para construir
+métricas e observabilidade.
+
+Bloco 5:
+
+Consolidar controles de privacidade,
+retenção, governança e avaliação de vieses.
+
+Bloco 6:
+
+Integrar as entregas e preparar a
+demonstração final do Tech Challenge.
+
+Não há monitoramento contínuo, alertas
+operacionais ou detecção de drift
+implementados pelo Bloco 2.
