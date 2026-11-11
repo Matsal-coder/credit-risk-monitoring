@@ -24,28 +24,34 @@ A solução deverá contemplar:
 - Monitoramento de infraestrutura e execução.
 - Documentação de privacidade, LGPD e governança.
 
-**Importante:** esses componentes representam o escopo global planejado e ainda não estão implementados.
-
+**Importante:** esta lista representa o escopo global do projeto. Os Blocos 0 e 1 estão concluídos, e os componentes funcionais do Bloco 2 já foram implementados. Drift, observabilidade, governança consolidada e integração final permanecem planejados.
 ## 3. Tecnologias
 
-### Implementadas na fundação
+### Implementadas
 
-- Python 3.12
-- setuptools
-- pytest
-- Ruff
-- Git e GitHub
+- Python 3.12.
+- pandas e NumPy — manipulação e preparação dos dados.
+- Scikit-Learn — preprocessamento e modelo baseline.
+- joblib — persistência do pipeline treinado.
+- Pandera — contratos e validação bloqueante de dados.
+- setuptools — empacotamento.
+- pytest — testes unitários e de integração.
+- Ruff — lint e formatação.
+- Git e GitHub — controle de versões.
 
 ### Planejadas para os próximos blocos
 
-- Scikit-Learn — baseline de classificação.
-- Pandera — contratos e validação de dados.
-- Evidently AI — detecção e relatórios de drift.
-- Prometheus — coleta e armazenamento de métricas.
-- Grafana — visualização e monitoramento.
-- Docker Compose — orquestração local da infraestrutura.
+- Evidently AI e testes estatísticos — detecção de drift.
+- Prometheus — coleta de métricas.
+- Grafana — visualização de indicadores.
+- Docker Compose — infraestrutura local de observabilidade.
 
-A utilização dessas tecnologias será introduzida conforme a necessidade de cada bloco.
+A inclusão de uma tecnologia no planejamento não significa
+que ela já esteja instalada ou operacional.
+
+Os contratos Pandera e a inferência bloqueante foram
+implementados no Bloco 2. A observabilidade e a
+detecção de drift permanecem fora do escopo concluído.
 
 ## 4. Dataset
 
@@ -171,7 +177,7 @@ Verificar consistência das dependências:
 python -m pip check
 ```
 
-Atualmente, a suíte contém um smoke test de importação do pacote. Os testes funcionais serão acrescentados conforme as funcionalidades forem implementadas.
+A suíte inclui testes unitários e de integração de preparação, treinamento, contratos de qualidade e inferência. Após a integração funcional do Bloco 2, foram aprovados 114 testes automatizados.
 
 ## 8. Roadmap de desenvolvimento
 
@@ -212,6 +218,46 @@ O projeto utiliza uma abordagem incremental, evitando antecipar dependências e 
 
 ## 11. Estado atual
 
+### Resumo consolidado
+
+Estado verificado após a integração funcional do Bloco 2:
+
+| Bloco | Estado |
+|---|---|
+| 0 — Fundação e arquitetura | Concluído |
+| 1 — Dados e baseline | Concluído |
+| 2 — Contratos e inferência bloqueante | Implementação concluída; documentação em andamento |
+| 3 — Simulação e detecção de drift | Não iniciado |
+| 4 — Observabilidade | Não iniciado |
+| 5 — Governança e privacidade | Não iniciado |
+| 6 — Integração e demonstração | Não iniciado |
+
+O baseline utiliza LogisticRegression com 17 features,
+e o threshold oficial é `0.1406724340221902`.
+
+O Bloco 2 implementou contratos Pandera para dados
+brutos e preparados, validação estruturada de lotes,
+preparação sem TARGET, inferência bloqueante e
+interface operacional de scoring.
+
+Na última validação funcional integrada à main:
+
+- 114 testes automatizados foram aprovados.
+- Ruff lint e formatação foram aprovados.
+- pip check não identificou conflitos.
+- O modelo persistido produziu scores consistentes.
+- Lotes inválidos foram rejeitados sem produzir scores.
+
+Referências técnicas:
+
+- [Arquitetura](docs/architecture.md).
+- [Contratos de qualidade](docs/quality-contracts.md).
+- [Reprodutibilidade](docs/reproducibility.md).
+
+As seções históricas abaixo registram a evolução
+incremental do projeto. Os estados intermediários
+nelas descritos não substituem o resumo consolidado.
+
 **Bloco 0 — Fundação e Arquitetura: concluído em 07/11/2026.**
 
 Componentes implementados e validados:
@@ -233,7 +279,7 @@ Validações registradas no encerramento do Bloco 0:
 - pip check: aprovado.
 - Git: `main` sincronizada com `origin/main`, sem alterações pendentes.
 
-**Bloco 1 — Dados e Modelo Baseline: em desenvolvimento.**
+**Bloco 1 — Dados e Modelo Baseline: concluído.**
 
 A branch `chore/data-safety` foi concluída e integrada à `main`.
 
@@ -405,8 +451,9 @@ O conjunto de referência foi reservado para
 monitoramento e não deve ser utilizado para
 treinamento ou escolha de threshold.
 
-A validação estrutural existente não substitui
-contratos Pandera, previstos para o Bloco 2.
+A validação estrutural inicialmente desenvolvida no Bloco 1
+foi complementada, no Bloco 2, por contratos Pandera para inferência,
+ com regras semânticas e bloqueio de lotes inválidos.
 
 Os CSVs podem conter informações cadastrais
 e devem permanecer protegidos.
@@ -453,3 +500,171 @@ O guia registra o ambiente de referência, as
 partições, os hashes, as métricas oficiais,
 as verificações de integridade e as limitações
 conhecidas do Bloco 1.
+
+## 13. Validação de qualidade e inferência — Bloco 2
+
+### 13.1. Objetivo
+
+O Bloco 2 adiciona uma barreira de qualidade antes
+da inferência do modelo de crédito.
+
+O fluxo implementado é:
+
+```text
+Lote CSV bruto
+    |
+    v
+Contrato Pandera raw_inference
+    |
+    +-- Rejeitado --> Relatório sem scores
+    |
+    v
+Preparação determinística
+    |
+    v
+Contrato Pandera prepared_inference
+    |
+    +-- Rejeitado --> Relatório sem scores
+    |
+    v
+Baseline persistido
+    |
+    v
+Probabilidades e classificações
+```
+
+O modelo somente é carregado após a aprovação
+dos dois contratos de qualidade.
+
+### 13.2. Contratos
+
+Os contratos são definidos em:
+
+`src/credit_risk_monitoring/quality/contracts.py`
+
+O serviço de validação está em:
+
+`src/credit_risk_monitoring/quality/validation.py`
+
+Foram implementadas regras de presença de colunas,
+tipos, unicidade dentro do lote, intervalos numéricos,
+domínios categóricos e consistência da sentinela
+`DAYS_EMPLOYED`.
+
+As regras e políticas de nulidade estão detalhadas em:
+
+[Catálogo de contratos](docs/quality-contracts.md).
+
+### 13.3. Entrada esperada
+
+O script de scoring recebe um CSV bruto com:
+
+- `SK_ID_CURR`.
+- As 16 features originais selecionadas.
+- Nenhuma coluna TARGET.
+- Nenhuma coluna DAYS_EMPLOYED_SENTINEL.
+
+O contrato utiliza `strict=True`, portanto
+colunas adicionais não previstas são rejeitadas.
+
+O arquivo `data/processed/reference.csv` já contém
+features preparadas e não deve ser enviado diretamente
+ao contrato bruto.
+
+### 13.4. Executar scoring
+
+Com a `.venv` ativada, na raiz do projeto:
+
+```bash
+python scripts/score_batch.py \
+  --input data/processed/quality_demo/valid_batch.csv \
+  --batch-id demo-valid-readme \
+  --report-output data/processed/quality_demo/readme_valid_report.json \
+  --scores-output data/processed/quality_demo/readme_valid_scores.csv
+```
+
+O exemplo pressupõe que `valid_batch.csv` já tenha
+sido gerado localmente conforme o guia de
+reprodutibilidade do Bloco 2.
+
+Os caminhos de saída precisam ser novos. O script
+recusa sobrescrever arquivos existentes.
+
+O parâmetro `--scores-output` é opcional.
+
+O modelo padrão é:
+
+`artifacts/baseline_model.joblib`
+
+### 13.5. Códigos de saída
+
+| Código | Resultado |
+|---|---|
+| 0 | Lote aprovado e scoring concluído |
+| 2 | Lote rejeitado por qualidade |
+| 1 | Erro operacional |
+
+Um lote rejeitado não produz scores.
+
+Os relatórios incluem identificador do lote,
+status, quantidade de registros e resultados
+agregados dos contratos.
+
+Scores individuais somente são gravados quando
+solicitados explicitamente.
+
+### 13.6. Evidências funcionais
+
+Na demonstração validada do Bloco 2:
+
+| Evidência | Válido | Inválido |
+|---|---|---|
+| Registros recebidos | 5 | 5 |
+| Registros pontuados | 5 | 0 |
+| Status | approved | rejected |
+| Código de saída | 0 | 2 |
+| Relatório JSON | Gerado | Gerado |
+| CSV de scores | Gerado | Não gerado |
+
+O lote inválido apresentou violação da regra
+`positive_credit`, provocada por uma alteração
+sintética em AMT_CREDIT.
+
+O threshold oficial permaneceu inalterado:
+
+`0.1406724340221902`
+
+### 13.7. Testes
+
+Executar:
+
+```bash
+python -m pytest
+python -m ruff check .
+python -m ruff format --check .
+python -m pip check
+```
+
+Após a integração funcional do Bloco 2,
+114 testes foram aprovados.
+
+Os testes incluem cenários de rejeição antes
+de predict_proba, comparação com o modelo
+persistido e validação dos arquivos gerados
+pela interface operacional.
+
+### 13.8. Privacidade e limitações
+
+Os datasets, artefatos e scores individuais
+permanecem locais e ignorados pelo Git.
+
+O campo batch_id deve ser operacional e não
+deve conter dados pessoais.
+
+A validação de qualidade não substitui
+monitoramento estatístico, análise de drift
+ou governança completa de dados.
+
+O Bloco 3 utilizará a referência histórica
+e os mecanismos de inferência já implementados
+para construir cenários de produção simulada.

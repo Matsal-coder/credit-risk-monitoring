@@ -1,10 +1,20 @@
-# Guia de reprodutibilidade — Bloco 1
+# Guia de reprodutibilidade — Blocos 1 e 2
 
 ## 1. Objetivo
 
-Este documento descreve como reproduzir o Bloco 1
-do projeto Credit Risk Monitoring, desde a preparação
-dos dados até a avaliação e persistência do baseline.
+Este documento descreve como reproduzir os Blocos 1 e 2
+do projeto Credit Risk Monitoring.
+
+O Bloco 1 contempla preparação, particionamento,
+treinamento, avaliação e persistência do baseline.
+
+O Bloco 2 acrescenta contratos Pandera, preparação
+de lotes sem TARGET, validação bloqueante e
+inferência operacional com o modelo persistido.
+
+Os resultados históricos do baseline são preservados.
+O Bloco 2 não realiza retreinamento nem reajusta
+o threshold selecionado na validação.
 
 Escopo reproduzido:
 
@@ -17,9 +27,12 @@ Escopo reproduzido:
 - Persistência do pipeline e dos resultados.
 - Inferência sobre a referência não rotulada.
 
-O projeto ainda não implementa monitoramento contínuo
-de drift, qualidade com Pandera ou observabilidade
-com Prometheus/Grafana.
+Os contratos Pandera e a inferência bloqueante
+foram implementados no Bloco 2.
+
+O projeto ainda não implementa monitoramento
+contínuo de drift ou observabilidade com
+Prometheus/Grafana.
 
 ## 2. Ambiente
 
@@ -32,6 +45,7 @@ Ambiente utilizado na execução de referência:
 - numpy: 2.5.4.
 - scikit-learn: 1.9.1.
 - joblib: 1.6.0.
+- Pandera: 0.35.0.
 
 O projeto utiliza ambiente virtual local `.venv`.
 
@@ -377,7 +391,7 @@ potencialmente sensíveis.
 - Probabilidades não foram formalmente calibradas.
 - Particionamento é aleatório, não temporal.
 - Referência foi extraída da mesma população.
-- Não há validação de schema com Pandera.
+- Há contratos Pandera implementados, mas ainda não existe monitoramento temporal da qualidade ou das distribuições.
 - Não há detecção contínua de drift.
 - Não há métricas operacionais instrumentadas.
 - Não há pipeline de produção implantado.
@@ -387,7 +401,8 @@ definido para o Bloco 1.
 
 ## 13. Continuidade
 
-Bloco 2: contratos e qualidade de dados com Pandera.
+Bloco 2: contratos Pandera e inferência bloqueante
+implementados; evidências documentadas na seção 14.
 
 Bloco 3: simulação de produção e monitoramento
 de drift com Evidently.
@@ -404,3 +419,388 @@ com base no resultado do conjunto de teste.
 Mudanças futuras de política ou modelagem
 devem ter protocolo de avaliação próprio
 e rastreabilidade explícita.
+
+## 14. Reprodução dos contratos e da inferência — Bloco 2
+
+### 14.1. Pré-requisitos
+
+A reprodução do Bloco 2 pressupõe:
+
+- Python 3.12.
+- Ambiente virtual `.venv` ativado.
+- Dependências instaladas com `pip install -e ".[dev]"`.
+- Partições preparadas pelo Bloco 1.
+- Modelo baseline persistido.
+
+Arquivos necessários:
+
+- `data/processed/reference.csv`
+- `artifacts/baseline_model.joblib`
+
+Os arquivos são produzidos localmente pelo Bloco 1
+e não estão versionados no repositório.
+
+Antes da demonstração, verificar:
+
+```bash
+python scripts/verify_dataset.py
+python -m pip check
+```
+
+O primeiro comando verifica a integridade das
+partições em relação ao manifesto de dados.
+
+### 14.2. Contratos implementados
+
+Os contratos são definidos em:
+
+`src/credit_risk_monitoring/quality/contracts.py`
+
+Estágios:
+
+1. `raw_inference`: recebe identificador e
+   16 features originais.
+2. `prepared_inference`: recebe identificador e
+   17 features preditivas preparadas.
+
+Os contratos verificam estrutura, tipos,
+unicidade, nulidades e regras semânticas.
+
+A documentação completa está em:
+
+`docs/quality-contracts.md`
+
+O serviço de validação está em:
+
+`src/credit_risk_monitoring/quality/validation.py`
+
+### 14.3. Particularidade da referência histórica
+
+O arquivo `reference.csv` foi criado pelo Bloco 1
+com as features já preparadas.
+
+Ele contém:
+
+- `SK_ID_CURR`.
+- As 17 features preditivas.
+- Nenhuma coluna TARGET.
+
+Portanto, não pode ser enviado diretamente
+ao contrato `raw_inference`.
+
+Para demonstrar o fluxo operacional completo,
+o procedimento a seguir constrói um lote de
+entrada compatível a partir de cinco registros
+da referência histórica.
+
+A construção:
+
+1. Seleciona cinco linhas.
+2. Remove a feature derivada da entrada.
+3. Restaura o código bruto `365243` nos casos
+   identificados pelo indicador de sentinela.
+4. Preserva as demais features originais.
+5. Produz um lote válido.
+6. Produz uma cópia com crédito negativo,
+   simulando uma violação de qualidade.
+
+Esse procedimento cria uma entrada de demonstração.
+Não recupera integralmente os dados brutos originais,
+nem representa um lote temporal de produção.
+
+### 14.4. Gerar lotes de demonstração
+
+Executar na raiz do projeto, com a `.venv` ativada:
+
+```bash
+python - <<'PY'
+from pathlib import Path
+
+import pandas as pd
+
+from credit_risk_monitoring.data.preparation import MODEL_FEATURES
+
+reference_path = Path("data/processed/reference.csv")
+output_dir = Path("data/processed/quality_demo/docs_run")
+
+if output_dir.exists():
+    raise FileExistsError(
+        "Diretorio de demonstracao ja existe. "
+        "Escolha outro nome para uma nova execucao."
+    )
+
+reference = pd.read_csv(reference_path, low_memory=False)
+prepared = reference.head(5).copy()
+
+assert len(prepared) == 5
+assert "TARGET" not in prepared.columns
+
+indicator = "DAYS_EMPLOYED_SENTINEL"
+
+raw_columns = [
+    "SK_ID_CURR",
+    *[feature for feature in MODEL_FEATURES if feature != indicator],
+]
+
+raw = prepared.loc[:, raw_columns].copy()
+
+sentinel_mask = prepared[indicator].eq(1)
+raw.loc[sentinel_mask, "DAYS_EMPLOYED"] = 365243
+
+invalid = raw.copy()
+invalid.loc[invalid.index[0], "AMT_CREDIT"] = -1.0
+
+output_dir.mkdir(parents=True, exist_ok=False)
+
+raw.to_csv(output_dir / "valid_batch.csv", index=False)
+invalid.to_csv(output_dir / "invalid_batch.csv", index=False)
+
+print("Diretorio:", output_dir)
+print("Registros:", len(raw))
+print("Colunas:", len(raw.columns))
+print("TARGET presente:", "TARGET" in raw.columns)
+print("Lotes validos e invalidos gerados.")
+PY
+```
+
+Saídas esperadas:
+
+```text
+Registros: 5
+Colunas: 17
+TARGET presente: False
+Lotes validos e invalidos gerados.
+```
+
+Os arquivos gerados são:
+
+- `data/processed/quality_demo/docs_run/valid_batch.csv`
+- `data/processed/quality_demo/docs_run/invalid_batch.csv`
+
+Esses arquivos são locais e ignorados pelo Git.
+
+O procedimento utiliza cinco registros históricos
+apenas para demonstração funcional.
+
+### 14.5. Executar lote válido
+
+```bash
+python scripts/score_batch.py \
+  --input data/processed/quality_demo/docs_run/valid_batch.csv \
+  --batch-id docs-valid \
+  --model artifacts/baseline_model.joblib \
+  --report-output data/processed/quality_demo/docs_run/valid_report.json \
+  --scores-output data/processed/quality_demo/docs_run/valid_scores.csv
+
+echo "Exit code: $?"
+```
+
+Resultado esperado:
+
+- Código de saída `0`.
+- Status `approved`.
+- Dois estágios de validação aprovados.
+- Cinco registros pontuados.
+- Relatório JSON gerado.
+- CSV de scores gerado.
+
+O threshold é carregado dos metadados do
+baseline persistido.
+
+O CSV de scores contém:
+
+- `row_index`
+- `probability_default`
+- `prediction`
+
+As probabilidades são calculadas pelo pipeline
+persistido; o código não realiza retreinamento.
+
+### 14.6. Executar lote inválido
+
+```bash
+python scripts/score_batch.py \
+  --input data/processed/quality_demo/docs_run/invalid_batch.csv \
+  --batch-id docs-invalid \
+  --model artifacts/baseline_model.joblib \
+  --report-output data/processed/quality_demo/docs_run/invalid_report.json \
+  --scores-output data/processed/quality_demo/docs_run/invalid_scores.csv
+
+echo "Exit code: $?"
+```
+
+Resultado esperado:
+
+- Código de saída `2`.
+- Status `rejected`.
+- Violação da regra `positive_credit`.
+- Nenhum registro pontuado.
+- Relatório JSON gerado.
+- Nenhum CSV de scores gerado.
+
+A rejeição ocorre antes do carregamento do
+modelo e antes da chamada a `predict_proba()`.
+
+### 14.7. Conferir os resultados
+
+```bash
+python - <<'PY'
+import json
+from pathlib import Path
+
+import pandas as pd
+
+base = Path("data/processed/quality_demo/docs_run")
+
+valid = json.loads(
+    (base / "valid_report.json").read_text(encoding="utf-8")
+)
+invalid = json.loads(
+    (base / "invalid_report.json").read_text(encoding="utf-8")
+)
+
+scores = pd.read_csv(base / "valid_scores.csv")
+
+assert valid["status"] == "approved"
+assert invalid["status"] == "rejected"
+assert len(scores) == 5
+assert scores["probability_default"].between(0, 1).all()
+assert not (base / "invalid_scores.csv").exists()
+
+print("Lote valido:", valid["status"])
+print("Lote invalido:", invalid["status"])
+print("Scores validos:", len(scores))
+print("Relatorio rejeitado sem scores: confirmado")
+print("Verificacao da demonstracao aprovada.")
+PY
+```
+
+Essa verificação confirma o comportamento
+operacional dos arquivos produzidos.
+
+A estrutura detalhada dos relatórios é definida
+pelos objetos de resultado em:
+
+- `quality/results.py`
+- `modeling/inference.py`
+
+### 14.8. Códigos de saída e persistência
+
+O entrypoint possui três códigos de saída:
+
+| Código | Significado |
+|---|---|
+| 0 | Aprovação e scoring concluído |
+| 2 | Rejeição por violação de qualidade |
+| 1 | Erro operacional |
+
+O script não sobrescreve arquivos existentes.
+
+O relatório JSON é criado após o CSV de scores,
+quando este foi solicitado.
+
+Falhas de escrita capturadas acionam limpeza
+dos arquivos recém-criados, em melhor esforço.
+
+A persistência não fornece garantias completas
+de transação ou atomicidade entre arquivos.
+
+### 14.9. Testes automatizados
+
+Executar:
+
+```bash
+python -m pytest
+python -m ruff check .
+python -m ruff format --check .
+python -m pip check
+git diff --check
+```
+
+Após a integração da implementação funcional
+do Bloco 2 à `main`, foram aprovados:
+
+**114 testes automatizados.**
+
+Os testes de integração incluem:
+
+- Scoring com o modelo baseline persistido.
+- Comparação de probabilidades com o pipeline oficial.
+- Lote inválido rejeitado sem scores.
+- Agregação de múltiplas violações.
+- Proteção contra sobrescrita.
+- Falha de carregamento do modelo.
+- Execução sem arquivo opcional de scores.
+- Limpeza de arquivos após falhas simuladas de escrita.
+
+### 14.10. Integridade dos artefatos
+
+Na validação realizada após a implementação
+funcional do Bloco 2, foram observados:
+
+| Artefato | SHA-256 |
+|---|---|
+| baseline_model.joblib | `8107f7111a4da92e69533a3e8e90e5ded561833964e7c9f06a71ba33bd66cf20` |
+| baseline_metrics.json | `467cf4a6b29ea4b02721b2bc47f375c271830d6d30fc98c472ac5b142285fd9c` |
+
+O threshold persistido verificado foi:
+
+`0.1406724340221902`
+
+Quantidade de features:
+
+`17`
+
+Os hashes acima são referências observadas
+após a implementação, não evidência isolada
+de comparação com hashes anteriores ao Bloco 2.
+
+A verificação das partições com o manifesto
+também foi aprovada.
+
+### 14.11. Segurança e privacidade
+
+Os relatórios de qualidade registram violações
+agregadas, sem expor valores individuais de
+features nem identificadores de clientes.
+
+O campo `batch_id` deve ser operacional,
+sem informações pessoais.
+
+O CSV de scores é opcional e deve permanecer
+em diretório protegido.
+
+O projeto ignora no Git:
+
+- `data/raw/`
+- `data/processed/`
+- `artifacts/`
+
+Não publicar lotes, relatórios com conteúdo
+potencialmente sensível ou artefatos do modelo.
+
+O arquivo joblib deve ser carregado somente
+de fonte confiável.
+
+### 14.12. Limitações
+
+A implementação demonstra uma barreira funcional
+de qualidade, mas não constitui um serviço de
+produção implantado.
+
+Limitações:
+
+- A referência é histórica e não temporal.
+- Os lotes de demonstração são simulados.
+- Os contratos não detectam drift estatístico.
+- Não há armazenamento centralizado de execuções.
+- Não há Prometheus, Grafana ou alertas operacionais.
+- Não há garantias de transação durável entre arquivos.
+- A validação não substitui análise de viés,
+  privacidade ou avaliação regulatória.
+
+O Bloco 3 deverá utilizar o baseline e os
+contratos existentes para desenvolver a
+simulação de produção e a detecção de drift.
+
+O Bloco 4 implementará a observabilidade.
