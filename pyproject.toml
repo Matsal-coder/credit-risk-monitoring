@@ -13,6 +13,8 @@ dependencies = [
     "scikit-learn>=1.5,<2",
     "joblib>=1.4,<2",
     "pandera[pandas]>=0.25,<1",
+    "evidently==0.7.23",
+    "litestar==2.22.0",
 ]
 
 [project.optional-dependencies]
@@ -27,6 +29,9 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+filterwarnings = [
+    'ignore:^numpy\.core is deprecated:DeprecationWarning:evidently\.legacy\.tests\.utils$',
+]
 
 [tool.ruff]
 target-version = "py312"
