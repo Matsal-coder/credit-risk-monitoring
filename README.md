@@ -24,7 +24,7 @@ A solução deverá contemplar:
 - Monitoramento de infraestrutura e execução.
 - Documentação de privacidade, LGPD e governança.
 
-**Importante:** esta lista representa o escopo global do projeto. Os Blocos 0 e 1 estão concluídos, e os componentes funcionais do Bloco 2 já foram implementados. Drift, observabilidade, governança consolidada e integração final permanecem planejados.
+**Importante:** esta lista representa o escopo global do projeto. Os Blocos 0, 1 e 2 estão concluídos, e os componentes funcionais do Bloco 3 foram implementados e integrados à `main`. Observabilidade com Prometheus/Grafana, governança consolidada e integração final permanecem planejadas.
 ## 3. Tecnologias
 
 ### Implementadas
@@ -34,6 +34,7 @@ A solução deverá contemplar:
 - Scikit-Learn — preprocessamento e modelo baseline.
 - joblib — persistência do pipeline treinado.
 - Pandera — contratos e validação bloqueante de dados.
+- Evidently AI — detecção estatística de data drift e relatórios HTML.
 - setuptools — empacotamento.
 - pytest — testes unitários e de integração.
 - Ruff — lint e formatação.
@@ -41,7 +42,6 @@ A solução deverá contemplar:
 
 ### Planejadas para os próximos blocos
 
-- Evidently AI e testes estatísticos — detecção de drift.
 - Prometheus — coleta de métricas.
 - Grafana — visualização de indicadores.
 - Docker Compose — infraestrutura local de observabilidade.
@@ -50,8 +50,10 @@ A inclusão de uma tecnologia no planejamento não significa
 que ela já esteja instalada ou operacional.
 
 Os contratos Pandera e a inferência bloqueante foram
-implementados no Bloco 2. A observabilidade e a
-detecção de drift permanecem fora do escopo concluído.
+implementados no Bloco 2. A simulação de produção,
+a detecção de drift e os relatórios de monitoramento
+foram implementados no Bloco 3. A observabilidade
+com Prometheus/Grafana permanece planejada.
 
 ## 4. Dataset
 
@@ -177,7 +179,7 @@ Verificar consistência das dependências:
 python -m pip check
 ```
 
-A suíte inclui testes unitários e de integração de preparação, treinamento, contratos de qualidade e inferência. Após a integração funcional do Bloco 2, foram aprovados 114 testes automatizados.
+A suíte inclui testes unitários e de integração de preparação, treinamento, contratos de qualidade, inferência, simulação e monitoramento de drift. Após a integração funcional do Bloco 3, foram aprovados 211 testes automatizados.
 
 ## 8. Roadmap de desenvolvimento
 
@@ -220,14 +222,14 @@ O projeto utiliza uma abordagem incremental, evitando antecipar dependências e 
 
 ### Resumo consolidado
 
-Estado verificado após a integração funcional do Bloco 2:
+Estado consolidado após a integração funcional do Bloco 3:
 
 | Bloco | Estado |
 |---|---|
 | 0 — Fundação e arquitetura | Concluído |
 | 1 — Dados e baseline | Concluído |
-| 2 — Contratos e inferência bloqueante | Implementação concluída; documentação em andamento |
-| 3 — Simulação e detecção de drift | Não iniciado |
+| 2 — Contratos e inferência bloqueante | Concluído |
+| 3 — Simulação e detecção de drift | Implementação concluída; documentação em andamento |
 | 4 — Observabilidade | Não iniciado |
 | 5 — Governança e privacidade | Não iniciado |
 | 6 — Integração e demonstração | Não iniciado |
@@ -242,7 +244,7 @@ interface operacional de scoring.
 
 Na última validação funcional integrada à main:
 
-- 114 testes automatizados foram aprovados.
+- 211 testes automatizados foram aprovados.
 - Ruff lint e formatação foram aprovados.
 - pip check não identificou conflitos.
 - O modelo persistido produziu scores consistentes.
@@ -665,6 +667,123 @@ A validação de qualidade não substitui
 monitoramento estatístico, análise de drift
 ou governança completa de dados.
 
-O Bloco 3 utilizará a referência histórica
-e os mecanismos de inferência já implementados
+O Bloco 3 reutilizou a referência histórica
+e os mecanismos de inferência do Bloco 2
 para construir cenários de produção simulada.
+
+## 14. Simulação de produção e detecção de drift — Bloco 3
+
+O Bloco 3 implementa monitoramento estatístico
+por lotes, reutilizando o baseline persistido
+e o quality gate do Bloco 2.
+
+Componentes principais:
+
+- `drift/simulation.py`: simulação determinística.
+- `drift/detection.py`: detecção com Evidently.
+- `drift/results.py`: resultados estruturados.
+- `drift/monitoring.py`: orquestração do fluxo.
+- `drift/reporting.py`: relatórios JSON e HTML.
+- `scripts/monitor_drift.py`: interface operacional.
+
+### 14.1. Cenários de simulação
+
+| Cenário | Registros afetados | Renda | Crédito |
+|---|---:|---:|---:|
+| `control` | 0% | Sem alteração | Sem alteração |
+| `moderate` | 50% | -10% | +10% |
+| `strong` | 100% | -20% | +25% |
+
+A simulação utiliza seed 642 por padrão.
+
+Na execução de referência, foram utilizados
+30.751 registros históricos e 46.127 registros
+de produção simulada.
+
+### 14.2. Executar o monitoramento
+
+Com a `.venv` ativa, na raiz do repositório:
+
+```bash
+python scripts/monitor_drift.py \
+  --reference data/processed/reference.csv \
+  --model artifacts/baseline_model.joblib \
+  --batch-id readme-strong-642 \
+  --json-output artifacts/readme-strong.json \
+  --html-output artifacts/readme-strong.html \
+  simulate \
+  --production-prepared data/processed/test.csv \
+  --scenario strong \
+  --seed 642
+```
+
+Os arquivos de entrada e o modelo precisam
+estar disponíveis localmente.
+
+Os destinos de relatório devem ser novos:
+a CLI não sobrescreve arquivos existentes.
+
+Também é possível monitorar um lote bruto
+externo com o subcomando `monitor` e
+o argumento `--production-raw`.
+
+### 14.3. Resultados de referência
+
+| Cenário | Features com drift | Classificações positivas |
+|---|---:|---:|
+| `control` | 0/16 | 6.623 |
+| `moderate` | 0/16 | 7.376 |
+| `strong` | 2/16 | 11.141 |
+
+O cenário forte sinalizou drift em:
+
+- `AMT_CREDIT`.
+- `AMT_INCOME_TOTAL`.
+
+O threshold do modelo permaneceu fixo em
+`0.1406724340221902`.
+
+Esses resultados representam previsões
+de um modelo congelado sobre dados simulados,
+não inadimplências efetivamente observadas.
+
+### 14.4. Códigos de saída
+
+| Código | Significado |
+|---|---|
+| `0` | Execução concluída e qualidade aprovada |
+| `1` | Erro operacional |
+| `2` | Lote rejeitado pelo quality gate |
+
+O código `0` não indica ausência de drift.
+
+Um lote válido pode apresentar alterações
+estatísticas e continuar sendo processado.
+
+### 14.5. Testes e documentação
+
+Após o merge funcional do Bloco 3:
+
+- 211 testes automatizados aprovados.
+- Ruff lint e formatação aprovados.
+- `pip check` sem conflitos.
+- Nenhum warning exibido na execução final do pytest.
+
+Para reproduzir as verificações:
+
+```bash
+python -m pytest -q
+python -m ruff check .
+python -m ruff format --check .
+python -m pip check
+```
+
+A metodologia, os métodos estatísticos,
+os resultados e as limitações estão
+documentados em:
+
+`docs/drift-monitoring.md`
+
+O monitoramento contínuo de infraestrutura
+e a visualização com Prometheus/Grafana
+pertencem ao escopo planejado do Bloco 4.

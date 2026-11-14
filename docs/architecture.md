@@ -118,18 +118,43 @@ Após a integração funcional:
 - Demonstrações de aprovação e rejeição executadas.
 - Integridade dos dados preparados verificada.
 
-A documentação final do Bloco 2 está sendo
-consolidada na branch `docs/data-quality-evidence`.
+A documentação do Bloco 2 foi consolidada
+em `docs/quality-contracts.md` e integrada à `main`.
+
+### Bloco 3 — Simulação e detecção de drift
+
+**Estado: implementação funcional concluída e integrada à `main`.**
+
+Componentes implementados:
+
+- Simulação determinística de lotes de produção.
+- Cenários `control`, `moderate` e `strong`.
+- Reutilização do quality gate Pandera.
+- Inferência com o baseline persistido.
+- Detecção estatística com Evidently AI.
+- Monitoramento de 16 features originais.
+- Resultados estruturados por feature e por lote.
+- Relatórios agregados JSON e HTML Evidently.
+- CLI `scripts/monitor_drift.py`.
+- Testes unitários e de integração.
+
+A integração funcional foi concluída no
+commit de merge `54581c2`.
+
+Após a integração dos Blocos 0 a 3,
+foram aprovados 211 testes automatizados.
+
+A metodologia e os resultados estão
+documentados em `docs/drift-monitoring.md`.
 
 ### Blocos ainda não implementados
 
-- Bloco 3: simulação de produção e detecção de drift.
 - Bloco 4: métricas, Prometheus, Grafana e observabilidade.
 - Bloco 5: governança e privacidade consolidadas.
 - Bloco 6: integração final e demonstração.
 
-Nenhum desses componentes deve ser descrito
-como operacional antes de sua implementação.
+Esses componentes permanecem planejados
+e não devem ser descritos como operacionais.
 
 ## 4. Decisões técnicas aprovadas
 
@@ -322,8 +347,9 @@ As execuções deverão possuir um identificador que permita correlacionar:
 - Logs e eventos operacionais.
 - Métricas e alertas associados.
 
-O Bloco 2 adotou batch_id como identificador operacional das validações e inferências.
-Sua utilização por métricas, eventos de drift e alertas será definida nos blocos posteriores.
+O Bloco 2 adotou `batch_id` como identificador operacional das validações e inferências.
+O Bloco 3 reutilizou esse identificador no monitoramento de drift.
+Sua utilização nos alertas e nas métricas de observabilidade será definida no Bloco 4.
 
 ### 7.4 Contrato de separação de dados
 
@@ -348,7 +374,7 @@ A especificação das métricas e seus nomes ficará para o Bloco 4.
 
 O pacote utiliza layout `src/`.
 
-A estrutura atual contém o código mínimo do pacote e a suíte inicial de testes.
+A estrutura implementada contém módulos de preparação, modelagem, qualidade e drift, com testes unitários e de integração.
 
 Novos diretórios serão criados somente quando houver uma responsabilidade concreta associada a eles.
 
@@ -1060,3 +1086,175 @@ demonstração final do Tech Challenge.
 Não há monitoramento contínuo, alertas
 operacionais ou detecção de drift
 implementados pelo Bloco 2.
+
+## 16. Arquitetura implementada — Bloco 3
+
+### 16.1. Objetivo
+
+O Bloco 3 implementa simulação de produção,
+detecção estatística de data drift e
+geração de relatórios de monitoramento.
+
+A arquitetura reutiliza:
+
+- Preparação dos dados do Bloco 1.
+- Pipeline Logistic Regression persistido.
+- Threshold oficial do baseline.
+- Contratos Pandera do Bloco 2.
+- Inferência protegida pelo quality gate.
+
+Não há retreinamento ou recalibração
+durante a execução do monitoramento.
+
+### 16.2. Fluxo operacional
+
+O processamento segue estas etapas:
+
+1. Carregamento da referência preparada.
+2. Reconstrução e validação de sua
+   representação bruta de inferência.
+3. Recebimento ou simulação do lote de produção.
+4. Verificação de separação entre
+   identificadores de referência e produção.
+5. Validação do lote pelo quality gate.
+6. Inferência sobre o lote aprovado.
+7. Comparação estatística entre referência
+   e produção com Evidently.
+8. Consolidação de resultados por feature.
+9. Geração de métricas agregadas por lote.
+10. Exportação de relatórios JSON e HTML.
+
+A rejeição pelo quality gate interrompe
+o processamento antes do scoring e
+da execução do detector de drift.
+
+Um lote aprovado pode apresentar
+drift estatístico sem ser rejeitado.
+
+### 16.3. Componentes e responsabilidades
+
+| Componente | Responsabilidade |
+|---|---|
+| `drift/simulation.py` | Reconstrução e simulação de lotes |
+| `drift/detection.py` | Evidently e estatísticas por feature |
+| `drift/results.py` | Resumos estruturados de drift |
+| `drift/monitoring.py` | Orquestração do monitoramento |
+| `drift/reporting.py` | Geração dos relatórios |
+| `scripts/monitor_drift.py` | Interface operacional |
+
+Esses componentes permanecem separados
+dos módulos de preparação, qualidade
+e modelagem dos blocos anteriores.
+
+### 16.4. Contrato estatístico
+
+São monitoradas 16 features originais:
+
+- 11 numéricas.
+- 5 categóricas.
+
+`SK_ID_CURR` e `TARGET` não integram
+as features enviadas ao detector.
+
+`DAYS_EMPLOYED_SENTINEL` permanece como
+feature derivada do baseline, mas não
+é monitorada entre as 16 originais.
+
+O Evidently seleciona métodos estatísticos
+adequados aos tipos de variáveis e ao
+volume de dados comparados.
+
+A camada de detecção registra método,
+estatística, limiar e decisão por feature.
+
+O resumo agregado do projeto sinaliza
+drift quando pelo menos uma feature
+ultrapassa seu critério individual.
+
+### 16.5. Resultados de referência
+
+Execuções com referência de 30.751
+registros e produção simulada de
+46.127 registros:
+
+| Cenário | Registros modificados | Features com drift |
+|---|---:|---:|
+| `control` | 0 | 0/16 |
+| `moderate` | 23.063 | 0/16 |
+| `strong` | 46.127 | 2/16 |
+
+No cenário forte, foram sinalizadas:
+
+- `AMT_CREDIT`.
+- `AMT_INCOME_TOTAL`.
+
+A seed padrão da simulação é 642.
+
+O baseline permaneceu congelado, com
+threshold `0.1406724340221902`.
+
+Esses resultados demonstram mudanças
+estatísticas nas entradas, sem comprovar
+degradação real do desempenho do modelo.
+
+### 16.6. Relatórios e operação
+
+A interface `scripts/monitor_drift.py`
+disponibiliza os subcomandos:
+
+- `simulate`: produção sintética.
+- `monitor`: produção bruta externa.
+
+Códigos de saída:
+
+| Código | Significado |
+|---|---|
+| `0` | Monitoramento concluído |
+| `1` | Erro operacional |
+| `2` | Rejeição pelo quality gate |
+
+O código `0` não implica ausência de drift.
+
+Os relatórios incluem informações
+estatísticas por feature e indicadores
+agregados de inferência.
+
+A escrita utiliza proteção contra
+sobrescrita e mecanismos de limpeza
+de saídas parciais em falhas tratadas.
+
+Esses mecanismos não constituem
+transação durável entre múltiplos arquivos.
+
+### 16.7. Limites arquiteturais
+
+O Bloco 3 implementa monitoramento
+estatístico por lotes, não um serviço
+contínuo de produção.
+
+Ainda não contempla:
+
+- Coleta contínua de métricas.
+- Prometheus e Grafana.
+- Alertas operacionais persistentes.
+- Agendamento de monitoramento.
+- Retreinamento automático.
+- Avaliação de concept drift com
+  novos rótulos observados.
+- Auditoria regulatória completa.
+
+O Bloco 4 deverá utilizar os resultados
+estruturados como base para observabilidade.
+
+### 16.8. Documentação de referência
+
+A metodologia estatística, os cenários,
+as evidências, as decisões de dependências
+e as limitações estão detalhadas em:
+
+`docs/drift-monitoring.md`
+
+Os contratos de entrada e o quality gate
+permanecem documentados em:
+
+`docs/quality-contracts.md`
