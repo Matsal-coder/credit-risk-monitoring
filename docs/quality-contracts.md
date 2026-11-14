@@ -18,7 +18,7 @@ A solução implementa:
 - Testes unitários e de integração.
 - Execução operacional por interface de linha de comando.
 
-A detecção estatística de drift não pertence a esses contratos e será implementada no Bloco 3.
+A detecção estatística de drift não pertence a esses contratos. Ela foi implementada no Bloco 3 e documentada em `docs/drift-monitoring.md`.
 
 ## 2. Ambiente e dependências
 

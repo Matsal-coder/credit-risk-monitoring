@@ -1,8 +1,8 @@
-# Guia de reprodutibilidade — Blocos 1 e 2
+# Guia de reprodutibilidade — Blocos 1, 2 e 3
 
 ## 1. Objetivo
 
-Este documento descreve como reproduzir os Blocos 1 e 2
+Este documento descreve como reproduzir os Blocos 1, 2 e 3
 do projeto Credit Risk Monitoring.
 
 O Bloco 1 contempla preparação, particionamento,
@@ -11,6 +11,10 @@ treinamento, avaliação e persistência do baseline.
 O Bloco 2 acrescenta contratos Pandera, preparação
 de lotes sem TARGET, validação bloqueante e
 inferência operacional com o modelo persistido.
+
+O Bloco 3 acrescenta simulação de produção,
+detecção estatística de drift com Evidently
+e relatórios operacionais JSON e HTML.
 
 Os resultados históricos do baseline são preservados.
 O Bloco 2 não realiza retreinamento nem reajusta
@@ -30,9 +34,9 @@ Escopo reproduzido:
 Os contratos Pandera e a inferência bloqueante
 foram implementados no Bloco 2.
 
-O projeto ainda não implementa monitoramento
-contínuo de drift ou observabilidade com
-Prometheus/Grafana.
+O projeto implementa detecção de drift por lotes,
+mas ainda não possui execução contínua automatizada
+nem observabilidade com Prometheus/Grafana.
 
 ## 2. Ambiente
 
@@ -49,8 +53,10 @@ Ambiente utilizado na execução de referência:
 
 O projeto utiliza ambiente virtual local `.venv`.
 
-As dependências estão declaradas no `pyproject.toml`
-por intervalos de versões, não por um lockfile.
+As dependências estão declaradas no `pyproject.toml`.
+Algumas utilizam intervalos de versões; Evidently 0.7.23
+e Litestar 2.22.0 possuem versões explicitamente fixadas.
+O projeto não utiliza um lockfile completo.
 
 Consequentemente, uma instalação futura pode utilizar
 versões compatíveis, mas diferentes das registradas
@@ -132,8 +138,10 @@ para o dataset original.
 python scripts/prepare_dataset.py
 ```
 
-A preparação utiliza seed 42 e particionamento
-aleatório estratificado.
+A preparação utiliza particionamento aleatório
+estratificado, com seed padrão 42.
+A seed efetivamente utilizada na geração histórica
+dos CSVs locais não foi comprovada nesta revisão.
 
 Distribuição:
 
@@ -799,8 +807,315 @@ Limitações:
 - A validação não substitui análise de viés,
   privacidade ou avaliação regulatória.
 
-O Bloco 3 deverá utilizar o baseline e os
-contratos existentes para desenvolver a
-simulação de produção e a detecção de drift.
+O Bloco 3 reutilizou o baseline e os contratos
+existentes para implementar a simulação de produção
+e a detecção de drift. A reprodução está na seção 15.
 
 O Bloco 4 implementará a observabilidade.
+
+## 15. Reprodução da simulação e do drift — Bloco 3
+
+### 15.1. Objetivo
+
+Esta seção apresenta os procedimentos
+para reproduzir o monitoramento estatístico
+do Bloco 3, utilizando os componentes
+implementados nos blocos anteriores.
+
+O processo reutiliza:
+
+- Dados preparados já verificados.
+- Referência histórica não rotulada.
+- Modelo baseline persistido.
+- Contratos Pandera de qualidade.
+- Inferência protegida pelo quality gate.
+- Detector Evidently.
+
+Nenhum dos comandos de monitoramento
+exige retreinamento do baseline.
+
+A documentação técnica completa está em
+`docs/drift-monitoring.md`.
+
+### 15.2. Pré-requisitos
+
+Executar os comandos a partir da raiz
+do repositório, com a `.venv` ativa.
+
+Arquivos locais necessários:
+
+- `data/processed/reference.csv`
+- `data/processed/test.csv`
+- `artifacts/baseline_model.joblib`
+
+Instalar as dependências declaradas
+no `pyproject.toml`, quando necessário:
+
+```bash
+python -m pip install -e ".[dev]"
+python -m pip check
+```
+
+Essa instalação deve ocorrer exclusivamente
+dentro do ambiente virtual do projeto.
+
+O Bloco 3 foi validado com:
+
+- Python 3.12.2.
+- Evidently 0.7.23.
+- Litestar 2.22.0.
+- pandas 2.3.3.
+- NumPy 2.5.4.
+- scikit-learn 1.9.1.
+- Pandera 0.35.0.
+
+As versões de Evidently e Litestar
+estão explicitamente fixadas
+no `pyproject.toml`.
+
+### 15.3. Dados de referência
+
+A execução de referência utiliza:
+
+| Conjunto | Registros |
+|---|---:|
+| Referência | 30.751 |
+| Produção simulada | 46.127 |
+
+Os conjuntos devem possuir valores
+disjuntos de `SK_ID_CURR`.
+
+A referência é histórica e não representa
+uma janela cronológica de produção real.
+
+As 16 features originais são comparadas
+estatisticamente; o atributo derivado
+`DAYS_EMPLOYED_SENTINEL` permanece
+reservado ao pipeline preditivo.
+
+### 15.4. Executar cenário controle
+
+```bash
+python scripts/monitor_drift.py \
+  --reference data/processed/reference.csv \
+  --model artifacts/baseline_model.joblib \
+  --batch-id reproduce-control-642 \
+  --json-output artifacts/reproduce-control-642.json \
+  --html-output artifacts/reproduce-control-642.html \
+  simulate \
+  --production-prepared data/processed/test.csv \
+  --scenario control \
+  --seed 642
+```
+
+Resultado de referência:
+
+- 46.127 registros pontuados.
+- Nenhuma linha modificada.
+- Nenhuma das 16 features sinalizada.
+- 6.623 classificações positivas.
+
+### 15.5. Executar cenário moderado
+
+```bash
+python scripts/monitor_drift.py \
+  --reference data/processed/reference.csv \
+  --model artifacts/baseline_model.joblib \
+  --batch-id reproduce-moderate-642 \
+  --json-output artifacts/reproduce-moderate-642.json \
+  --html-output artifacts/reproduce-moderate-642.html \
+  simulate \
+  --production-prepared data/processed/test.csv \
+  --scenario moderate \
+  --seed 642
+```
+
+Resultado de referência:
+
+- 46.127 registros pontuados.
+- 23.063 registros modificados.
+- Nenhuma das 16 features sinalizada.
+- 7.376 classificações positivas.
+
+As distribuições foram alteradas,
+mas os limiares estatísticos utilizados
+não foram ultrapassados.
+
+### 15.6. Executar cenário forte
+
+```bash
+python scripts/monitor_drift.py \
+  --reference data/processed/reference.csv \
+  --model artifacts/baseline_model.joblib \
+  --batch-id reproduce-strong-642 \
+  --json-output artifacts/reproduce-strong-642.json \
+  --html-output artifacts/reproduce-strong-642.html \
+  simulate \
+  --production-prepared data/processed/test.csv \
+  --scenario strong \
+  --seed 642
+```
+
+Resultado de referência:
+
+- 46.127 registros pontuados.
+- 46.127 registros modificados.
+- 2 das 16 features sinalizadas.
+- 11.141 classificações positivas.
+
+As features sinalizadas foram
+`AMT_CREDIT` e `AMT_INCOME_TOTAL`.
+
+Os resultados estatísticos detalhados
+estão em `docs/drift-monitoring.md`.
+
+### 15.7. Arquivos de saída
+
+Cada execução aprovada produz:
+
+- Um relatório JSON agregado.
+- Um relatório HTML do Evidently.
+
+Os relatórios são gravados somente
+quando o quality gate é aprovado.
+
+Os destinos de saída devem ser inéditos,
+pois a ferramenta impede sobrescrita
+de arquivos já existentes.
+
+Antes de repetir um experimento,
+utilizar novos nomes de `batch-id`
+e de arquivos de relatório.
+
+Não apagar automaticamente artefatos
+anteriores durante a reprodução.
+
+### 15.8. Monitorar lote externo
+
+O subcomando `monitor` recebe
+um CSV no contrato bruto de inferência.
+
+Exemplo:
+
+```bash
+python scripts/monitor_drift.py \
+  --reference data/processed/reference.csv \
+  --model artifacts/baseline_model.joblib \
+  --batch-id reproduce-external \
+  --json-output artifacts/reproduce-external.json \
+  --html-output artifacts/reproduce-external.html \
+  monitor \
+  --production-raw caminho/para/lote-bruto.csv
+```
+
+O arquivo informado deve existir,
+conter as colunas obrigatórias
+e respeitar os contratos de qualidade.
+
+A detecção de drift não é executada
+quando a validação bloqueante rejeita
+o lote de produção.
+
+### 15.9. Códigos de saída
+
+| Código | Interpretação |
+|---|---|
+| `0` | Execução bem-sucedida |
+| `1` | Erro operacional |
+| `2` | Rejeição pelo quality gate |
+
+O código `0` não significa
+ausência de data drift.
+
+Drift estatístico pode ser observado
+mesmo em lotes aprovados pelo
+contrato de qualidade.
+
+### 15.10. Testes e verificações
+
+Executar:
+
+```bash
+python -m pytest -q
+python -m ruff check .
+python -m ruff format --check .
+python -m pip check
+git diff --check
+```
+
+Após o merge funcional do Bloco 3,
+a suíte completa apresentou:
+
+- 211 testes aprovados.
+- Nenhuma falha.
+- Nenhum warning exibido no pytest.
+- Ruff aprovado.
+- `pip check` sem conflitos.
+
+Os testes de drift incluem:
+
+- Métodos estatísticos e thresholds.
+- Simulação determinística.
+- Agregação dos resultados.
+- Integração do quality gate.
+- Rejeição antes da inferência e do drift.
+- Execução real com dados preparados.
+- CLI e códigos de saída.
+- Relatórios e falhas de persistência.
+
+### 15.11. Integridade e privacidade
+
+Os arquivos de entrada e os relatórios
+permanecem no ambiente local.
+
+Não versionar:
+
+- Dados brutos ou preparados.
+- Modelos persistidos.
+- Relatórios derivados dos datasets.
+- Scores individuais.
+
+Os relatórios JSON de monitoramento
+não incluem vetores de scores individuais.
+
+Os relatórios HTML devem permanecer
+restritos ao ambiente autorizado,
+pois podem expor distribuições de dados.
+
+A exclusão de identificadores da análise
+estatística não constitui garantia
+integral de anonimização.
+
+### 15.12. Limitações
+
+Os experimentos utilizam dados
+sinteticamente modificados.
+
+Não são demonstrados:
+
+- Mudanças temporais reais.
+- Desempenho preditivo após observação
+  de novos rótulos.
+- Concept drift comprovado.
+- Retreinamento automático.
+- Agendamento ou monitoramento contínuo.
+- Exportação de métricas para Prometheus.
+- Dashboards do Grafana.
+
+A reprodutibilidade depende dos mesmos
+dados preparados, modelo persistido,
+versões de biblioteca e parâmetros
+utilizados na execução de referência.
+
+A seed padrão do particionamento é 42,
+mas sua utilização efetiva na geração
+dos arquivos históricos locais não
+foi comprovada nesta etapa documental.
+
+A seed da simulação de drift é 642
+nas execuções aqui reproduzidas.
+
+A documentação dos próximos blocos
+deverá distinguir monitoramento de
+distribuições, observabilidade
+operacional e governança de modelos.
