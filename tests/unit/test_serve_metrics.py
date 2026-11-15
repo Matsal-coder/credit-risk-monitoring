@@ -79,3 +79,61 @@ def test_server_uses_loopback_and_configured_port(cli, tmp_path, monkeypatch):
         reload=False,
         workers=1,
     )
+
+
+def test_default_host_is_loopback(cli):
+    """Execucao local permanece restrita a localhost."""
+    args = cli.build_parser().parse_args(["--events-db", "events.sqlite3"])
+
+    assert args.host == "127.0.0.1"
+
+
+def test_rejects_unapproved_host(cli):
+    """Enderecos arbitrarios nao sao aceitos."""
+    with pytest.raises(SystemExit) as exc:
+        cli.build_parser().parse_args(
+            [
+                "--events-db",
+                "events.sqlite3",
+                "--host",
+                "192.168.1.10",
+            ]
+        )
+
+    assert exc.value.code == 2
+
+
+def test_docker_host_is_explicit(cli, tmp_path, monkeypatch):
+    """Container exige configuracao explicita para todas as interfaces."""
+    database = tmp_path / "events.sqlite3"
+    database.touch()
+
+    app = object()
+    server = Mock()
+
+    monkeypatch.setattr(cli, "create_app", lambda path: app)
+    monkeypatch.setattr(cli.uvicorn, "run", server)
+
+    assert (
+        cli.main(
+            [
+                "--events-db",
+                str(database),
+                "--host",
+                "0.0.0.0",
+                "--port",
+                "8000",
+            ]
+        )
+        == 0
+    )
+
+    server.assert_called_once_with(
+        app,
+        host="0.0.0.0",
+        port=8000,
+        log_level="info",
+        access_log=False,
+        reload=False,
+        workers=1,
+    )

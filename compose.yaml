@@ -1,0 +1,92 @@
+name: credit-risk-monitoring
+
+services:
+  exporter:
+    build:
+      context: .
+      dockerfile: infra/Dockerfile.exporter
+    image: credit-risk-monitoring-exporter:local
+    command:
+      - python
+      - scripts/serve_metrics.py
+      - --events-db
+      - /app/artifacts/observability/events.sqlite3
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+    volumes:
+      - type: bind
+        source: ./artifacts/observability
+        target: /app/artifacts/observability
+        read_only: true
+        bind:
+          create_host_path: false
+    expose:
+      - "8000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    restart: "no"
+    networks:
+      - monitoring
+
+  prometheus:
+    image: prom/prometheus:v3.16.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+      - --web.listen-address=0.0.0.0:9090
+    volumes:
+      - type: bind
+        source: ./infra/prometheus/prometheus.yml
+        target: /etc/prometheus/prometheus.yml
+        read_only: true
+      - prometheus_data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    depends_on:
+      - exporter
+    restart: "no"
+    networks:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana:12.2.0
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Configure GRAFANA_ADMIN_PASSWORD no arquivo .env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - type: bind
+        source: ./infra/grafana/provisioning/datasources
+        target: /etc/grafana/provisioning/datasources
+        read_only: true
+
+      - type: bind
+        source: ./infra/grafana/provisioning/dashboards
+        target: /etc/grafana/provisioning/dashboards
+        read_only: true
+      - type: bind
+        source: ./infra/grafana/dashboards
+        target: /etc/grafana/credit-risk-dashboards
+        read_only: true
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - prometheus
+    restart: "no"
+    networks:
+      - monitoring
+
+networks:
+  monitoring:
+    driver: bridge
+
+volumes:
+  prometheus_data:
+  grafana_data:
