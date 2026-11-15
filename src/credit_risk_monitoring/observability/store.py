@@ -269,3 +269,37 @@ class SQLiteEventStore:
             ).fetchone()
 
         return int(row[0])
+
+    def iter_events(
+        self,
+        *,
+        chunk_size: int = 500,
+    ) -> Generator[OperationalEvent]:
+        """Percorre todo o historico com validacao e memoria limitada."""
+        if (
+            isinstance(chunk_size, bool)
+            or not isinstance(chunk_size, int)
+            or not 1 <= chunk_size <= 10000
+        ):
+            raise ValueError("chunk_size deve estar entre 1 e 10000.")
+
+        with self._connect() as connection:
+            # Mantem uma visao consistente durante a leitura.
+            connection.execute("BEGIN")
+
+            cursor = connection.execute(
+                """
+                SELECT *
+                FROM operational_events
+                ORDER BY started_at ASC, execution_id ASC
+                """
+            )
+
+            while True:
+                rows = cursor.fetchmany(chunk_size)
+
+                if not rows:
+                    break
+
+                for row in rows:
+                    yield self._read_event(row)

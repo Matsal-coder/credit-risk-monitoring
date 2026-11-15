@@ -15,12 +15,14 @@ dependencies = [
     "pandera[pandas]>=0.25,<1",
     "evidently==0.7.23",
     "litestar==2.22.0",
+    "uvicorn>=0.30,<1",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8,<10",
     "ruff>=0.9,<1",
+    "prometheus-client>=0.20,<1",
 ]
 
 [tool.setuptools.packages.find]
