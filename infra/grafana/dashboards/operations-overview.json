@@ -1,0 +1,387 @@
+{
+  "id": null,
+  "uid": "credit-risk-operations",
+  "title": "Credit Risk Monitoring - Operations Overview",
+  "description": "Observabilidade operacional de scoring, qualidade e drift. Contagens acumuladas derivadas do historico SQLite.",
+  "tags": [
+    "credit-risk",
+    "mlops",
+    "observability"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 41,
+  "version": 1,
+  "refresh": "15s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": []
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Execuções registradas",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "credit-risk-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(credit_risk_executions_count)",
+          "legendFormat": "{{pipeline}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "credit-risk-prometheus"
+          },
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 2,
+      "title": "Execuções com falha",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "credit-risk-prometheus"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(credit_risk_executions_count{execution_status=\"failed\"})",
+          "legendFormat": "{{pipeline}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "credit-risk-prometheus"
+          },
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 3,
+      "title": "Violações de qualidade",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "credit-risk-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(credit_risk_quality_violations_count)",
+          "legendFormat": "{{pipeline}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "credit-risk-prometheus"
+          },
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 4,
+      "title": "Execuções com drift",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "credit-risk-prometheus"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(credit_risk_drift_detected_count)",
+          "legendFormat": "{{pipeline}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "credit-risk-prometheus"
+          },
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 5,
+      "title": "Execuções por status e pipeline",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "credit-risk-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (pipeline, execution_status) (credit_risk_executions_count)",
+          "legendFormat": "{{pipeline}} / {{execution_status}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "credit-risk-prometheus"
+          },
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Duração média por pipeline",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "credit-risk-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (pipeline) (credit_risk_execution_duration_seconds_sum) / sum by (pipeline) (credit_risk_execution_duration_seconds_count)",
+          "legendFormat": "{{pipeline}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "credit-risk-prometheus"
+          },
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 7,
+      "title": "Execuções em andamento",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "credit-risk-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "credit_risk_running_executions",
+          "legendFormat": "{{pipeline}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "credit-risk-prometheus"
+          },
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "title": "Disponibilidade do exporter",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "credit-risk-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 12,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "up{job=\"credit-risk-exporter\"}",
+          "legendFormat": "{{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "credit-risk-prometheus"
+          },
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    }
+  ]
+}

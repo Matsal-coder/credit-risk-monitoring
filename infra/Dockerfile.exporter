@@ -1,0 +1,21 @@
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+COPY pyproject.toml README.md ./
+COPY src/ ./src/
+COPY scripts/serve_metrics.py ./scripts/serve_metrics.py
+
+RUN python -m pip install --no-cache-dir . \
+    && mkdir -p /app/artifacts/observability \
+    && chown -R 10001:10001 /app
+
+USER 10001:10001
+
+EXPOSE 8000
+
+CMD ["python", "scripts/serve_metrics.py", "--events-db", "/app/artifacts/observability/events.sqlite3", "--host", "0.0.0.0", "--port", "8000"]

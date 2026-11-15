@@ -33,6 +33,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Banco SQLite operacional existente.",
     )
     parser.add_argument(
+        "--host",
+        choices=("127.0.0.1", "0.0.0.0"),
+        default="127.0.0.1",
+        help="Interface HTTP: localhost por padrao; 0.0.0.0 para Docker.",
+    )
+    parser.add_argument(
         "--port",
         type=valid_port,
         default=8000,
@@ -52,7 +58,7 @@ def main(argv: list[str] | None = None) -> int:
 
     uvicorn.run(
         app,
-        host="127.0.0.1",
+        host=args.host,
         port=args.port,
         log_level="info",
         access_log=False,
