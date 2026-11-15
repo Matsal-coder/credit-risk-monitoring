@@ -18,7 +18,7 @@ A solução implementa:
 - Testes unitários e de integração.
 - Execução operacional por interface de linha de comando.
 
-A detecção estatística de drift não pertence a esses contratos. Ela foi implementada no Bloco 3 e documentada em `docs/drift-monitoring.md`.
+A detecção estatística de drift não pertence a esses contratos. Ela foi implementada no Bloco 3 e documentada em `docs/drift-monitoring.md`. A instrumentação operacional foi acrescentada posteriormente no Bloco 4 e está descrita na seção 13 deste documento.
 
 ## 2. Ambiente e dependências
 
@@ -507,7 +507,7 @@ Limitações atuais:
 - Os contratos foram desenvolvidos para o Home Credit e para as features selecionadas.
 - A validação não garante qualidade estatística ou estabilidade temporal.
 - O identificador é verificado quanto à unicidade apenas dentro de cada lote.
-- O serviço não possui armazenamento centralizado de eventos.
+- Na implementação original do Bloco 2, o serviço não possuía armazenamento operacional de eventos; ele foi acrescentado posteriormente no Bloco 4.
 - A contagem de violações não equivale necessariamente à contagem de clientes afetados.
 - Algumas falhas estruturais possuem classificação genérica.
 - A persistência em arquivos oferece limpeza de melhor esforço, sem atomicidade entre múltiplos arquivos.
@@ -518,10 +518,127 @@ Continuidade planejada:
 
 **Bloco 3:** simulação de produção e detecção de drift, utilizando a referência histórica e os resultados de inferência.
 
-**Bloco 4:** instrumentação operacional, métricas, Prometheus e Grafana.
+**Bloco 4:** instrumentação operacional, métricas, Prometheus e Grafana — implementados posteriormente, conforme seção 13.
 
 **Bloco 5:** documentação consolidada de governança e privacidade.
 
 **Bloco 6:** integração, demonstração e preparação da entrega final.
 
 Os contratos e a barreira de qualidade deverão ser preservados durante essas evoluções. Alterações futuras deverão ser justificadas e acompanhadas de testes de regressão.
+
+
+## 13. Integração posterior com a observabilidade — Bloco 4
+
+Esta seção descreve a instrumentação **adicionada após a conclusão do
+Bloco 2**. As regras Pandera, a política de nulidades, a preparação,
+o threshold do baseline e a barreira de qualidade permanecem inalterados.
+O armazenamento de eventos não substitui `ValidationResult`, os
+relatórios JSON ou os testes dos contratos originais.
+
+### 13.1. Registro operacional do quality gate
+
+A interface `scripts/score_batch.py` passou a aceitar o argumento
+opcional `--events-db` para persistir eventos operacionais em SQLite.
+O armazenamento local utilizado na demonstração foi:
+
+`artifacts/observability/events.sqlite3`
+
+Com a opção habilitada, o ciclo operacional registra informações
+agregadas da execução de scoring, incluindo seu estado, resultados
+de qualidade e ocorrências de violações quando aplicável. Sem essa
+opção, a finalidade original da CLI de scoring é preservada.
+
+É importante diferenciar três resultados:
+
+- **Lote aprovado:** os dois contratos passam, e o modelo pode gerar
+  scores; código de saída `0` quando o processamento é concluído.
+- **Lote rejeitado:** o quality gate impede a inferência; código de
+  saída `2`, sem scores; a execução pode ser registrada como
+  operacionalmente `completed`, pois o bloqueio foi executado conforme
+  a regra de negócio.
+- **Falha operacional:** um erro tratado na execução pode produzir
+  código de saída `1` e estado operacional `failed`. Não equivale
+  necessariamente a uma rejeição pelo contrato Pandera.
+
+O campo `batch_id` permanece um identificador operacional, e não
+deve conter dados pessoais. Nenhum `SK_ID_CURR` ou valor individual de
+feature é incluído como label de métrica.
+
+### 13.2. Exportação de métricas agregadas
+
+O fluxo instrumentado é:
+
+```text
+scripts/score_batch.py --events-db ...
+           |
+           v
+SQLite — eventos operacionais
+           |
+           v
+Metrics Exporter — GET /metrics
+           |
+           v
+Prometheus — scrape periódico
+           |
+           v
+Grafana — Operations Overview
+```
+
+O exporter lê os eventos persistidos: ele **não executa** Pandera,
+não pontua lotes e não substitui o quality gate.
+
+As famílias métricas particularmente relevantes para qualidade são:
+
+| Métrica | Significado operacional |
+|---|---|
+| `credit_risk_executions_count{pipeline="scoring",execution_status="..."}` | Quantidade de execuções de scoring por estado operacional |
+| `credit_risk_quality_violations_count{pipeline="scoring"}` | Soma das ocorrências de violações de qualidade registradas no histórico |
+| `credit_risk_execution_duration_seconds_sum` e `_count` | Agregados utilizados para calcular a duração média por pipeline |
+| `credit_risk_running_executions{pipeline="scoring"}` | Execuções que permanecem registradas como em andamento |
+
+As métricas de contagem são **gauges derivados do histórico SQLite**.
+O Prometheus coleta fotografias dessas contagens ao longo do tempo,
+sem reconstruir retroativamente os horários originais dos eventos.
+A quantidade de ocorrências de violações não corresponde
+necessariamente ao número de clientes, linhas ou lotes distintos.
+
+### 13.3. Exemplo de scoring instrumentado
+
+Com a `.venv` ativa, modelo disponível e lote bruto de demonstração
+previamente gerado conforme `docs/reproducibility.md`, executar na
+raiz do projeto, escolhendo novos nomes para evitar sobrescrita:
+
+```bash
+python scripts/score_batch.py \
+  --input data/processed/quality_demo/docs_run/invalid_batch.csv \
+  --batch-id quality-observability-example \
+  --model artifacts/baseline_model.joblib \
+  --events-db artifacts/observability/events.sqlite3 \
+  --report-output artifacts/quality-observability-example.json
+```
+
+O lote de exemplo contém uma violação sintética de `positive_credit`.
+A expectativa é rejeição pelo quality gate, código de saída `2`,
+relatório de qualidade e ausência de scores. Uma execução instrumentada
+adiciona dados ao histórico e pode alterar os totais do dashboard.
+O exemplo pressupõe que o banco e seu diretório operacional existam.
+
+### 13.4. Evidências e limites
+
+Na demonstração local do Bloco 4, o SQLite continha quatro execuções
+de scoring: três `completed` e uma `failed`. As consultas PromQL
+retornaram **duas ocorrências agregadas de violações de qualidade**
+no histórico da stack e duração média de scoring de aproximadamente
+**0,103 segundo**. Esses valores representam um snapshot de teste,
+não indicadores de operação produtiva nem contagem de clientes afetados.
+
+A implementação mantém a distinção entre qualidade de dados,
+resultado do modelo e observabilidade operacional. Não foram
+implementados agendamento contínuo de scoring, notificações
+automáticas de alertas, integração com concessão real de crédito,
+política institucional de retenção ou conformidade integral com a LGPD.
+
+Para o catálogo completo das sete famílias métricas, a segurança
+da stack, as evidências de funcionamento e os comandos de validação,
+consultar `docs/observability.md`. Para reproduzir o pipeline e os
+cenários de demonstração, consultar `docs/reproducibility.md`.
