@@ -43,6 +43,10 @@ services:
         source: ./infra/prometheus/prometheus.yml
         target: /etc/prometheus/prometheus.yml
         read_only: true
+      - type: bind
+        source: ./infra/prometheus/alert_rules.yml
+        target: /etc/prometheus/alert_rules.yml
+        read_only: true
       - prometheus_data:/prometheus
     ports:
       - "127.0.0.1:9090:9090"

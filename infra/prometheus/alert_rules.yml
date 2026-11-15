@@ -1,0 +1,39 @@
+groups:
+  - name: credit-risk-operational-alerts
+    interval: 15s
+    rules:
+      - alert: CreditRiskDriftDetected
+        expr: |
+          delta(
+            credit_risk_drift_detected_count{pipeline="monitoring"}[3m]
+          ) > 0
+        labels:
+          severity: warning
+          category: drift
+        annotations:
+          summary: "Novo evento de data drift detectado"
+          description: "O pipeline de monitoramento apresentou aumento no total de execucoes com drift durante a janela de 3 minutos."
+
+      - alert: CreditRiskOperationalFailure
+        expr: |
+          delta(
+            credit_risk_executions_count{execution_status="failed"}[3m]
+          ) > 0
+        labels:
+          severity: critical
+          category: operational
+        annotations:
+          summary: "Nova falha operacional registrada"
+          description: "O pipeline apresentou aumento no total de execucoes com falha durante a janela de 3 minutos."
+
+      - alert: CreditRiskQualityViolation
+        expr: |
+          delta(
+            credit_risk_quality_violations_count[3m]
+          ) > 0
+        labels:
+          severity: warning
+          category: quality
+        annotations:
+          summary: "Novas violacoes de qualidade registradas"
+          description: "O pipeline apresentou aumento nas ocorrencias de violacao de qualidade durante a janela de 3 minutos."

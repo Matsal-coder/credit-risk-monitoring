@@ -149,7 +149,7 @@ documentados em `docs/drift-monitoring.md`.
 
 ### Bloco 4 — Instrumentação e observabilidade
 
-**Estado: implementação funcional concluída e integrada à `main`; consolidação documental em andamento.**
+**Estado: infraestrutura funcional integrada à `main`; correção P0 de alertas validada na branch `fix/observability-alert-rules`, aguardando integração.**
 
 Componentes implementados:
 
@@ -159,6 +159,7 @@ Componentes implementados:
 - Docker Compose com exporter, Prometheus 3.16.0 e Grafana 12.2.0.
 - Datasource e dashboard de oito painéis provisionados por arquivos.
 - Testes de eventos, armazenamento, métricas, endpoint e contratos do dashboard.
+- Três regras Prometheus para drift, falhas operacionais e violações de qualidade, testadas temporalmente e demonstradas em `firing` e `inactive`.
 
 O merge funcional da infraestrutura foi registrado em `fc48d95`.
 A regressão após esse merge aprovou **349 testes**. O protocolo,
@@ -1333,7 +1334,9 @@ scripts/score_batch.py        scripts/monitor_drift.py
 | `scripts/serve_metrics.py` | CLI de inicialização do exporter |
 | `infra/Dockerfile.exporter` | Imagem Linux do exporter |
 | `compose.yaml` | Serviços, rede, volumes e portas locais |
-| `infra/prometheus/prometheus.yml` | Job de scrape `credit-risk-exporter` |
+| `infra/prometheus/prometheus.yml` | Job de scrape `credit-risk-exporter` e carregamento de alert rules |
+| `infra/prometheus/alert_rules.yml` | Regras PromQL de drift, falha e qualidade |
+| `infra/prometheus/alert_rules.test.yml` | Cenários temporais do promtool |
 | `infra/grafana/provisioning/` | Datasource e provider de dashboards |
 | `infra/grafana/dashboards/operations-overview.json` | Dashboard versionado |
 
@@ -1446,6 +1449,23 @@ representativos de operação produtiva.
 
 O roteiro detalhado de reprodução, os comandos de verificação e o
 catálogo das métricas estão em `docs/observability.md`.
+
+#### 17.7.1. Alertas automáticos — complemento da correção P0
+
+Além dos scrapes e das consultas do Grafana, o Prometheus avalia três regras
+versionadas (`infra/prometheus/alert_rules.yml`): `CreditRiskDriftDetected`,
+`CreditRiskOperationalFailure` e `CreditRiskQualityViolation`. Os gauges
+históricos do SQLite são examinados por `delta(...[3m]) > 0`, com avaliação
+a cada 15 segundos; o alerta reflete mudança observada durante os scrapes,
+não um registro individual de evento com timestamp original.
+
+A implementação preserva os módulos de preparação, Pandera, modelo,
+Evidently, SQLite e exporter. Não adiciona Alertmanager, notificações
+externas nem novos painéis no Grafana. Em 15/11/2026, os três alertas
+registraram amostras `firing` reais, com posterior estado `inactive`.
+A regressão ampliada passou de 349 testes históricos para 364 testes na
+branch antes da consolidação documental. Procedimentos e horários
+observados constam de `docs/observability.md`.
 
 ### 17.8. Limitações e continuidade
 
