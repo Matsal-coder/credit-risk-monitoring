@@ -1,0 +1,81 @@
+rule_files:
+  - alert_rules.yml
+
+evaluation_interval: 15s
+
+tests:
+  - name: drift_alert_lifecycle
+    interval: 15s
+    input_series:
+      - series: 'credit_risk_drift_detected_count{pipeline="monitoring"}'
+        values: '0+0x7 1+0x7 1+0x16'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: CreditRiskDriftDetected
+        exp_alerts: []
+
+      - eval_time: 2m
+        alertname: CreditRiskDriftDetected
+        exp_alerts:
+          - exp_labels:
+              pipeline: monitoring
+              severity: warning
+              category: drift
+            exp_annotations:
+              summary: "Novo evento de data drift detectado"
+              description: "O pipeline de monitoramento apresentou aumento no total de execucoes com drift durante a janela de 3 minutos."
+
+      - eval_time: 6m
+        alertname: CreditRiskDriftDetected
+        exp_alerts: []
+
+  - name: operational_failure_lifecycle
+    interval: 15s
+    input_series:
+      - series: 'credit_risk_executions_count{pipeline="scoring",execution_status="failed"}'
+        values: '0+0x7 1+0x7 1+0x16'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: CreditRiskOperationalFailure
+        exp_alerts: []
+
+      - eval_time: 2m
+        alertname: CreditRiskOperationalFailure
+        exp_alerts:
+          - exp_labels:
+              pipeline: scoring
+              execution_status: failed
+              severity: critical
+              category: operational
+            exp_annotations:
+              summary: "Nova falha operacional registrada"
+              description: "O pipeline apresentou aumento no total de execucoes com falha durante a janela de 3 minutos."
+
+      - eval_time: 6m
+        alertname: CreditRiskOperationalFailure
+        exp_alerts: []
+
+  - name: quality_violation_lifecycle
+    interval: 15s
+    input_series:
+      - series: 'credit_risk_quality_violations_count{pipeline="scoring"}'
+        values: '0+0x7 2+0x7 2+0x16'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: CreditRiskQualityViolation
+        exp_alerts: []
+
+      - eval_time: 2m
+        alertname: CreditRiskQualityViolation
+        exp_alerts:
+          - exp_labels:
+              pipeline: scoring
+              severity: warning
+              category: quality
+            exp_annotations:
+              summary: "Novas violacoes de qualidade registradas"
+              description: "O pipeline apresentou aumento nas ocorrencias de violacao de qualidade durante a janela de 3 minutos."
+
+      - eval_time: 6m
+        alertname: CreditRiskQualityViolation
+        exp_alerts: []

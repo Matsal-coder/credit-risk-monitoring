@@ -52,7 +52,10 @@ O registro de eventos ocorre quando as CLIs são executadas com persistência op
 | `scripts/serve_metrics.py` | Inicialização local ou em container do exporter |
 | `infra/Dockerfile.exporter` | Imagem Python do exporter |
 | `compose.yaml` | Serviços e isolamento da stack |
-| `infra/prometheus/prometheus.yml` | Configuração de scrape |
+| `infra/prometheus/prometheus.yml` | Scrape, avaliação e carregamento das alert rules |
+| `infra/prometheus/alert_rules.yml` | Três alertas automáticos Prometheus |
+| `infra/prometheus/alert_rules.test.yml` | Testes temporais com promtool |
+| `tests/unit/test_observability_alert_rules.py` | Testes Python de contratos e configuração dos alertas |
 | `infra/grafana/provisioning/` | Provisionamento do datasource e do dashboard |
 | `infra/grafana/dashboards/operations-overview.json` | Dashboard versionado |
 
@@ -336,6 +339,89 @@ git diff --check
 | Prometheus Metrics Exporter | `697e60e` |
 | Prometheus + Grafana Monitoring Stack | `fc48d95` |
 
+### 9.2. Correção P0 — regras automáticas de alerta (15/11/2026)
+
+**Situação:** funcionamento demonstrado na branch `fix/observability-alert-rules`,
+pendente de integração à `main` no momento desta atualização documental.
+
+O Prometheus avalia três regras versionadas em `infra/prometheus/alert_rules.yml`,
+referenciadas por `rule_files` em `infra/prometheus/prometheus.yml` e montadas em
+modo somente leitura pelo `compose.yaml`. O intervalo de scrape e avaliação é
+15 segundos. As regras não definem `for` nem `keep_firing_for`: disparam assim
+que a expressão é verdadeira numa avaliação e deixam de disparar quando ela
+passa a falsa. A janela de demonstração é de três minutos.
+
+| Regra | Expressão PromQL | Severidade |
+|---|---|---|
+| `CreditRiskDriftDetected` | `delta(credit_risk_drift_detected_count{pipeline="monitoring"}[3m]) > 0` | warning |
+| `CreditRiskOperationalFailure` | `delta(credit_risk_executions_count{execution_status="failed"}[3m]) > 0` | critical |
+| `CreditRiskQualityViolation` | `delta(credit_risk_quality_violations_count[3m]) > 0` | warning |
+
+`delta()` foi escolhido para detectar aumento recente nos **gauges de totais
+históricos SQLite**, não para estimar a quantidade exata de eventos. As regras
+preservam as labels operacionais de baixa cardinalidade (pipeline e, quando
+existente, execution_status) e acrescentam `severity` e `category`. Não há
+labels com dados pessoais, identificadores de lote ou mensagens de erro.
+
+### Evidências reais da correção
+
+As consultas à API `/api/v1/rules?type=alert` confirmaram as três regras
+com `health=ok`; o job `credit-risk-exporter` apresentou `health=up` e
+`up=1`. Foram executadas as CLIs instrumentadas com o SQLite local, sem
+injeção manual de métricas:
+
+| Situação | Evidência observada em 15/11/2026 (UTC) |
+|---|---|
+| Controle, sem drift | 46.127 linhas aprovadas; `drift_detected=False`; drift total permaneceu 1; `delta=0`; regra `inactive` |
+| Drift forte | Execução aprovada e drift detectado; total 1 → 2; `CreditRiskDriftDetected` em `firing` às 22:55:38 |
+| Falha operacional | Duas tentativas reais com `FileExistsError`, `exit_code=1`; `CreditRiskOperationalFailure` em `firing` às 22:56:38 |
+| Qualidade | Scoring rejeitado, cinco linhas, `exit_code=2`; violações 2 → 3; `CreditRiskQualityViolation` em `firing` às 23:32:17 |
+| Resolução de drift e falha | Ambas as regras `inactive` às 23:30:14 |
+| Resolução de qualidade | `firing` às 23:33:23 e `inactive` às 23:35:34; zero alertas ativos |
+
+O histórico do Prometheus forneceu amostras `ALERTS{alertstate="firing"}`
+para os três casos. Os horários de resolução exatos não foram determinados:
+as consultas comprovam a transição entre observações, não seu segundo preciso.
+Os totais são snapshots locais e crescerão em novas demonstrações.
+
+### Testes e inspeção
+
+- `promtool check rules`: `SUCCESS: 3 rules found`.
+- `promtool test rules`: `SUCCESS` para séries temporais e estados esperados.
+- Testes de contratos de configuração em pytest: **15 aprovados**.
+- Regressão integral antes da atualização documental: **364 aprovados**;
+  Ruff check, Ruff format, pip check, Docker Compose config e diff check aprovados.
+- Endpoints úteis: `/api/v1/targets`, `/api/v1/rules?type=alert`,
+  `/api/v1/alerts` e `/api/v1/query_range` em `http://127.0.0.1:9090`.
+
+No Git Bash/Windows, validar as regras sem converter os caminhos do container:
+
+```bash
+MSYS_NO_PATHCONV=1 docker run --rm \
+  --entrypoint promtool \
+  -v "$(pwd -W)/infra/prometheus:/etc/prometheus:ro" \
+  prom/prometheus:v3.16.0 \
+  check rules /etc/prometheus/alert_rules.yml
+
+MSYS_NO_PATHCONV=1 docker run --rm \
+  --entrypoint promtool \
+  -v "$(pwd -W)/infra/prometheus:/etc/prometheus:ro" \
+  prom/prometheus:v3.16.0 \
+  test rules /etc/prometheus/alert_rules.test.yml
+```
+
+**Limitações:** a detecção depende de scrapes suficientemente frequentes:
+uma mudança que ocorra e seja revertida entre scrapes pode passar despercebida.
+As séries refletem o instante da coleta, não o timestamp original dos eventos.
+Alterações ou reinicialização do SQLite podem fazer gauges diminuírem; `delta()`
+pode ser afetado por lacunas de amostragem e não modela resets como counters.
+O primeiro valor histórico após iniciar o Prometheus não constitui, sozinho,
+evidência de evento novo. A janela de três minutos foi escolhida para
+reprodução local; seu uso em produção exigiria outra política operacional.
+Não foram configurados Alertmanager, canais de notificação nem agendamento
+das CLIs; o dashboard Grafana existente permanece com oito painéis, sem
+provisionamento adicional de alertas no Grafana.
+
 ## 10. Segurança, privacidade e limitações
 
 ### 10.1. Controles demonstrados
@@ -356,7 +442,7 @@ Esses controles foram demonstrados no cenário local. Não representam, isoladam
 2. **Métricas não são eventos históricos retroativos:** a série temporal reflete o instante de coleta; valores já acumulados podem permanecer constantes entre scrapes.
 3. **Gauges derivados do SQLite:** contagens podem variar caso o histórico seja alterado; `rate()` e funções destinadas a counters não são automaticamente apropriadas.
 4. **Risco de estado `running` obsoleto:** um processo interrompido sem encerramento registrado pode permanecer com estado não terminal.
-5. **Ausência de alertas automatizados provisionados:** o dashboard e o indicador `up` permitem inspeção, mas não há evidência de regras de alerta e notificações configuradas nesta entrega.
+5. **Alertas sem notificações externas:** três regras de alerta são avaliadas pelo Prometheus e tiveram disparos e resoluções demonstrados localmente; não há Alertmanager, Slack, e-mail ou entrega automática de notificações.
 6. **Escopo local:** não foram implementados TLS, autenticação de rede do Prometheus, gestão centralizada de segredos, backup automatizado, alta disponibilidade ou execução multi-host.
 7. **Modelo e referência históricos:** resultados de drift referem-se a cenários simulados, sem comprovar concept drift ou degradação de desempenho com novos rótulos.
 8. **Retenção assimétrica:** a retenção de sete dias do Prometheus não implica eliminação automática de eventos do SQLite, nem estabelece uma política institucional de retenção.

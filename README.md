@@ -24,7 +24,7 @@ A solução deverá contemplar:
 - Monitoramento de infraestrutura e execução.
 - Documentação de privacidade, LGPD e governança.
 
-**Estado atual:** os Blocos 0 a 3 estão concluídos. O Bloco 4 possui implementação funcional integrada à `main` e está na etapa final de documentação. A governança consolidada e a integração demonstrativa permanecem no escopo dos Blocos 5 e 6. O projeto ainda não possui notificações automáticas de alerta nem agendamento contínuo das execuções de scoring e drift.
+**Estado atual:** os Blocos 0 a 3 estão concluídos, e a infraestrutura original do Bloco 4 está integrada à `main`. A correção P0 de alertas Prometheus foi implementada e demonstrada na branch `fix/observability-alert-rules`, pendente de merge. O projeto possui três regras automáticas de alerta avaliadas pelo Prometheus, **sem notificações externas** e sem agendamento contínuo das CLIs. Governança e integração final permanecem nos Blocos 5 e 6.
 
 ## 3. Tecnologias
 
@@ -228,7 +228,7 @@ Estado consolidado após o merge `fc48d95` da infraestrutura do Bloco 4:
 | 1 — Dados e baseline | Concluído |
 | 2 — Contratos e inferência bloqueante | Concluído |
 | 3 — Simulação e detecção de drift | Concluído, com documentação integrada |
-| 4 — Observabilidade | Implementação concluída; documentação em andamento |
+| 4 — Observabilidade | Infraestrutura integrada; alertas P0 demonstrados na branch de correção, integração pendente |
 | 5 — Governança e privacidade | Não iniciado |
 | 6 — Integração e demonstração | Não iniciado |
 
@@ -800,6 +800,7 @@ O Bloco 4 acrescenta instrumentação operacional aos fluxos por lote de scoring
 - **Exporter:** `scripts/serve_metrics.py`, com interface de rede local `127.0.0.1` por padrão e `0.0.0.0` apenas quando explicitamente solicitado para o container.
 - **Prometheus:** serviço Docker `prometheus`, coleta de `exporter:8000/metrics` a cada 15 segundos e retenção configurada de sete dias.
 - **Grafana:** serviço Docker `grafana`, datasource provisionado e dashboard `Credit Risk Monitoring - Operations Overview` com oito painéis.
+- **Alertas:** três regras Prometheus versionadas para novo drift, falha operacional e violação de qualidade; avaliação a cada 15 s, janela de detecção de 3 min.
 
 As métricas de contagem são **gauges agregados sobre o histórico SQLite**. O Prometheus registra seus valores ao longo dos scrapes, sem reconstruir automaticamente os timestamps originais dos eventos. Não se deve aplicar `rate()` indiscriminadamente a essas séries nem interpretá-las como counters monotônicos nativos.
 
@@ -837,7 +838,25 @@ Na validação operacional do Bloco 4, a base SQLite continha seis eventos (duas
 
 Na regressão pós-merge da infraestrutura (`fc48d95`): **349 testes aprovados**, Ruff e `pip check` aprovados, Docker Compose validado e serviços em execução. O exporter foi verificado com `uid=10001` e volume SQLite montado com `RW=false`.
 
-### 15.4. Limitações e documentação
+### 15.4. Alertas automáticos — correção P0
+
+As regras em `infra/prometheus/alert_rules.yml` são carregadas pelo
+Prometheus a partir de `infra/prometheus/prometheus.yml` e disponibilizadas
+por bind mount somente leitura em `compose.yaml`. As expressões utilizam
+`delta(gauge[3m]) > 0`, evitando disparos simplesmente por totais
+históricos maiores que zero. O dashboard Grafana permanece com oito painéis;
+não há Alertmanager ou notificações por e-mail/Slack.
+
+Na demonstração real de 15/11/2026 (UTC), o alerta de drift disparou às
+22:55:38, o alerta de falha operacional às 22:56:38 e o alerta de qualidade
+às 23:32:17. Os três retornaram posteriormente a `inactive` (a última
+consulta de qualidade registrou zero alertas ativos às 23:35:34).
+O cenário controle aprovado não disparou drift. As regras passaram em
+`promtool check rules` e `promtool test rules`; 15 testes Python novos
+aprovados, com regressão geral de **364 testes aprovados** antes da revisão
+documental. O procedimento e as limitações constam de `docs/observability.md`.
+
+### 15.5. Limitações e documentação
 
 A solução não agenda automaticamente os lotes de scoring/drift; o Prometheus realiza coleta periódica de métricas, não execução contínua do modelo. Não há alertas automáticos com notificações configurados, reconstrução de histórico temporal de eventos no Prometheus, retreinamento automático, implantação em nuvem ou garantias de conformidade regulatória integral.
 

@@ -1339,3 +1339,61 @@ do Prometheus não elimina automaticamente eventos SQLite.
 A arquitetura, o catálogo completo das sete métricas,
 a configuração do exporter e as decisões de segurança
 estão detalhados em [`docs/observability.md`](observability.md).
+
+
+### 16.10. Reprodução das regras de alerta Prometheus — correção P0
+
+As regras versionadas estão em `infra/prometheus/alert_rules.yml`; os testes
+temporais, em `infra/prometheus/alert_rules.test.yml`. O arquivo
+`infra/prometheus/prometheus.yml` carrega as regras, e `compose.yaml`
+disponibiliza o YAML ao container em modo somente leitura.
+
+Executar no Git Bash do Windows, a partir da raiz do projeto:
+
+```bash
+MSYS_NO_PATHCONV=1 docker run --rm \
+  --entrypoint promtool \
+  -v "$(pwd -W)/infra/prometheus:/etc/prometheus:ro" \
+  prom/prometheus:v3.16.0 \
+  check rules /etc/prometheus/alert_rules.yml
+
+MSYS_NO_PATHCONV=1 docker run --rm \
+  --entrypoint promtool \
+  -v "$(pwd -W)/infra/prometheus:/etc/prometheus:ro" \
+  prom/prometheus:v3.16.0 \
+  test rules /etc/prometheus/alert_rules.test.yml
+
+python -m pytest tests/unit/test_observability_alert_rules.py -q
+docker compose config --quiet
+docker compose up -d --build
+```
+
+No Prometheus local, consultar:
+
+- `http://127.0.0.1:9090/api/v1/targets` (target `credit-risk-exporter` em `up`).
+- `http://127.0.0.1:9090/api/v1/rules?type=alert` (três regras `health=ok`).
+- `http://127.0.0.1:9090/api/v1/alerts` (alertas ativos).
+
+Para gerar novas ocorrências, executar `scripts/monitor_drift.py` com
+`--events-db artifacts/observability/events.sqlite3`, usando `simulate`
+com `--scenario control` e posteriormente `--scenario strong`; os parâmetros
+de referência, modelo, produção e seed estão documentados na seção 15.
+Para violações de qualidade, executar `scripts/score_batch.py` com lote
+bruto inválido e `--events-db`, conforme seção 14. **Sempre escolher
+identificadores e nomes de relatório inéditos**: a CLI recusa sobrescrita
+e um `FileExistsError` produz falha operacional legítima, mas não uma
+execução aprovada com drift.
+
+Consultar as séries `ALERTS{alertstate="firing"}` ou `/api/v1/query_range`
+para recuperar o disparo histórico se a consulta instantânea acontecer
+antes da avaliação ou após a janela de três minutos. Na demonstração de
+15/11/2026 (UTC), observou-se `firing` para drift às 22:55:38, falha às
+22:56:38 e qualidade às 23:32:17; todas voltaram posteriormente a `inactive`.
+A suíte integral registrou 364 testes aprovados antes da revisão dos docs.
+
+Os gauges derivados do SQLite não são counters nativos. A expressão
+`delta(...[3m]) > 0` detecta uma variação positiva observada em scrapes,
+não necessariamente o número exato de eventos. Perda de scrapes, alterações
+do banco e janelas sem duas amostras podem prejudicar a detecção.
+O Prometheus não agenda scoring ou drift e não há notificações externas.
+Não executar `docker compose down -v` quando se quiser preservar evidências.
