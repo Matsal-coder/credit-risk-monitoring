@@ -1,8 +1,8 @@
-# Guia de reprodutibilidade — Blocos 1, 2 e 3
+# Guia de reprodutibilidade — Blocos 1 a 4
 
 ## 1. Objetivo
 
-Este documento descreve como reproduzir os Blocos 1, 2 e 3
+Este documento descreve como reproduzir os Blocos 1 a 4
 do projeto Credit Risk Monitoring.
 
 O Bloco 1 contempla preparação, particionamento,
@@ -15,6 +15,9 @@ inferência operacional com o modelo persistido.
 O Bloco 3 acrescenta simulação de produção,
 detecção estatística de drift com Evidently
 e relatórios operacionais JSON e HTML.
+
+O Bloco 4 acrescenta eventos operacionais em SQLite,
+exporter HTTP, coleta Prometheus e dashboards Grafana.
 
 Os resultados históricos do baseline são preservados.
 O Bloco 2 não realiza retreinamento nem reajusta
@@ -34,9 +37,11 @@ Escopo reproduzido:
 Os contratos Pandera e a inferência bloqueante
 foram implementados no Bloco 2.
 
-O projeto implementa detecção de drift por lotes,
-mas ainda não possui execução contínua automatizada
-nem observabilidade com Prometheus/Grafana.
+O projeto implementa detecção de drift por lotes e
+observabilidade com Prometheus/Grafana, mas ainda não
+agenda automaticamente execuções de scoring e drift.
+A coleta contínua de métricas não equivale à execução
+contínua dos pipelines de negócio.
 
 ## 2. Ambiente
 
@@ -415,7 +420,8 @@ implementados; evidências documentadas na seção 14.
 Bloco 3: simulação de produção e monitoramento
 de drift com Evidently.
 
-Bloco 4: observabilidade com Prometheus/Grafana.
+Bloco 4: instrumentação SQLite, métricas, Prometheus e
+Grafana implementados; reprodução na seção 16.
 
 Bloco 5: governança e privacidade.
 
@@ -1119,3 +1125,217 @@ A documentação dos próximos blocos
 deverá distinguir monitoramento de
 distribuições, observabilidade
 operacional e governança de modelos.
+
+As limitações acima correspondem ao escopo histórico
+do Bloco 3. O Bloco 4 acrescentou a exposição de métricas
+e dashboards, documentados na seção 16.
+
+## 16. Reprodução da instrumentação e observabilidade — Bloco 4
+
+### 16.1. Objetivo e limites
+
+Este procedimento reproduz a camada de observabilidade
+integrada à `main` no commit `fc48d95`, sem retreinar
+o baseline nem alterar os contratos Pandera ou o detector
+Evidently. As CLIs registram eventos em SQLite; o exporter
+lê o histórico operacional; o Prometheus consulta `/metrics`
+a cada 15 segundos; o Grafana apresenta o dashboard
+versionado de oito painéis.
+
+**Importante:** a coleta periódica de métricas não agenda
+novas execuções de scoring ou monitoramento. Os exemplos
+de lotes dos Blocos 2 e 3 permanecem válidos, desde que
+seus caminhos de saída e identificadores sejam inéditos.
+
+### 16.2. Ambiente e arquivos locais
+
+Pré-requisitos:
+
+- Python 3.12 com a `.venv` ativa e dependências do projeto.
+- Docker Desktop com Linux Engine em execução e Docker Compose.
+- Banco SQLite local em `artifacts/observability/events.sqlite3`,
+  gerado por execuções instrumentadas, fora do Git.
+- Arquivo `.env` local, ignorado pelo Git, com a variável
+  `GRAFANA_ADMIN_PASSWORD` configurada para uma senha forte.
+
+O Docker Compose pressupõe a existência do diretório
+`artifacts/observability/` e do banco de eventos; não cria
+eventos operacionais automaticamente. Não incluir dados,
+modelos, SQLite ou credenciais em commits.
+
+### 16.3. Registrar eventos nas execuções de negócio
+
+As interfaces `scripts/score_batch.py` e
+`scripts/monitor_drift.py` aceitam `--events-db` para
+habilitar a persistência operacional. Para reproduzir
+os cenários, reutilizar os comandos das seções 14.5,
+14.6 e 15.4–15.6, acrescentando este argumento **antes
+do subcomando `simulate` ou `monitor`, quando houver**:
+
+```bash
+--events-db artifacts/observability/events.sqlite3
+```
+
+Por exemplo, uma execução de scoring instrumentada,
+pressupondo que o lote bruto de demonstração já exista:
+
+```bash
+python scripts/score_batch.py \
+  --input data/processed/quality_demo/docs_run/valid_batch.csv \
+  --batch-id observability-valid-example \
+  --model artifacts/baseline_model.joblib \
+  --events-db artifacts/observability/events.sqlite3 \
+  --report-output artifacts/observability-valid-example.json
+```
+
+Os argumentos de relatórios devem apontar para arquivos
+**ainda inexistentes**, pois as CLIs evitam sobrescrita.
+Lotes aprovados e rejeitados produzem resultados distintos:
+rejeição de qualidade pode retornar código `2` sem gerar
+scores, enquanto uma execução aprovada com drift pode
+retornar `0`. Falha operacional e detecção de drift não
+são equivalentes. O identificador `batch_id` não deve
+conter dados pessoais.
+
+### 16.4. Iniciar a stack
+
+Na raiz do repositório, com o Docker Engine disponível:
+
+```bash
+docker compose config --quiet
+docker compose up -d --build
+docker compose ps
+```
+
+A topologia utiliza os serviços `exporter`, `prometheus`
+e `grafana`. O exporter está disponível apenas na rede
+Docker pela porta `8000`. As interfaces de Prometheus e
+Grafana são publicadas exclusivamente em loopback:
+
+- Prometheus: `http://127.0.0.1:9090/targets`.
+- Grafana: `http://127.0.0.1:3000`.
+- Dashboard: `http://127.0.0.1:3000/d/credit-risk-operations`.
+
+O Grafana utiliza o usuário local `admin` e a senha
+configurada em `.env`; seu datasource provisionado aponta
+para `http://prometheus:9090` dentro da rede Docker.
+
+### 16.5. Validar a coleta por PromQL
+
+Em um terminal com a `.venv` ativa, execute:
+
+```bash
+python - <<'PY'
+import httpx
+
+base = "http://127.0.0.1:9090"
+queries = {
+    "exporter_up": 'up{job="credit-risk-exporter"}',
+    "executions": "sum(credit_risk_executions_count)",
+    "quality_violations": "sum(credit_risk_quality_violations_count)",
+    "drift_detected": "sum(credit_risk_drift_detected_count)",
+}
+with httpx.Client(timeout=15) as client:
+    for name, expression in queries.items():
+        response = client.get(
+            f"{base}/api/v1/query", params={"query": expression}
+        )
+        response.raise_for_status()
+        payload = response.json()
+        assert payload["status"] == "success", payload
+        series = payload["data"]["result"]
+        print(name, [item["value"][1] for item in series])
+        assert series, f"Sem series para {name}"
+PY
+```
+
+Se o exporter ainda não tiver eventos, primeiro executar
+um lote instrumentado. Não comparar rigidamente os totais
+com um snapshot histórico: novas execuções alteram as métricas.
+
+### 16.6. Conferir o dashboard provisionado
+
+No navegador, abrir o dashboard
+`http://127.0.0.1:3000/d/credit-risk-operations`.
+Conferir os oito painéis: execuções registradas,
+falhas, violações de qualidade, drift, execuções por
+status/pipeline, duração média, execuções em andamento
+e disponibilidade do exporter.
+
+O datasource possui UID `credit-risk-prometheus` e o
+dashboard possui UID `credit-risk-operations`. A presença
+do dashboard pode ser confirmada pela API Grafana com
+autenticação, sem expor a senha em logs compartilhados.
+
+### 16.7. Resultado observado e interpretação
+
+Na validação local de **15/11/2026**, com seis eventos
+preexistentes no SQLite, foram observados:
+
+| Indicador | Resultado observado |
+|---|---:|
+| Execuções registradas | 6 |
+| Falhas operacionais | 1 |
+| Violações de qualidade agregadas | 2 |
+| Execuções com drift | 1 |
+| Execuções em andamento | 0 |
+| Duração média monitoring | ~7,947 s |
+| Duração média scoring | ~0,103 s |
+| Disponibilidade do exporter (`up`) | 1 |
+
+Esses valores são apenas uma evidência de demonstração.
+O total poderá aumentar caso novos lotes sejam executados.
+As métricas de contagem são **gauges agregados do SQLite**;
+o Prometheus registra as amostras no instante do *scrape*,
+sem reconstruir a cronologia original dos eventos. Portanto,
+não interpretar essas séries como counters nativos nem aplicar
+`rate()` automaticamente às contagens históricas.
+
+### 16.8. Validação técnica e encerramento
+
+```bash
+python -m pytest -q
+python -m ruff check .
+python -m ruff format --check .
+python -m pip check
+docker compose config --quiet
+git diff --check
+```
+
+Após o merge `fc48d95`, a suíte apresentou **349 testes
+aprovados**, Ruff lint aprovado, 73 arquivos Python
+formatados, `pip check` sem conflitos e Docker Compose
+válido. Foram observadas sete famílias métricas,
+18 amostras no exporter e oito painéis no Grafana.
+
+A configuração do exporter foi validada em container com
+`uid=10001` e montagem do SQLite somente para leitura.
+Prometheus e Grafana utilizam volumes persistentes próprios.
+Para desligar sem excluir esses volumes:
+
+```bash
+docker compose down
+```
+
+**Não usar `docker compose down -v`** quando for necessário
+preservar o histórico das ferramentas.
+
+### 16.9. Segurança e limitações
+
+A stack foi validada para uso **local**, não para exposição
+pública. A senha administrativa do Grafana fica em `.env`
+ignorado pelo Git; as métricas não utilizam identificadores
+de clientes ou lotes como labels; modelos, datasets e o
+banco SQLite não são versionados.
+
+Não foram implementados agendamento automático de scoring
+ou drift, notificações de alertas, reconstrução temporal
+retroativa, TLS, autenticação completa para acesso externo,
+backups automatizados ou alta disponibilidade. O estado
+`running` pode permanecer obsoleto quando um processo é
+interrompido antes de registrar sua conclusão. A retenção
+do Prometheus não elimina automaticamente eventos SQLite.
+
+A arquitetura, o catálogo completo das sete métricas,
+a configuração do exporter e as decisões de segurança
+estão detalhados em [`docs/observability.md`](observability.md).

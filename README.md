@@ -10,7 +10,7 @@ O objetivo é desenvolver uma solução capaz de identificar problemas de qualid
 
 A implementação será incremental, com validação dos componentes antes de sua integração.
 
-## 2. Escopo funcional planejado
+## 2. Escopo funcional do projeto
 
 A solução deverá contemplar:
 
@@ -24,7 +24,8 @@ A solução deverá contemplar:
 - Monitoramento de infraestrutura e execução.
 - Documentação de privacidade, LGPD e governança.
 
-**Importante:** esta lista representa o escopo global do projeto. Os Blocos 0, 1 e 2 estão concluídos, e os componentes funcionais do Bloco 3 foram implementados e integrados à `main`. Observabilidade com Prometheus/Grafana, governança consolidada e integração final permanecem planejadas.
+**Estado atual:** os Blocos 0 a 3 estão concluídos. O Bloco 4 possui implementação funcional integrada à `main` e está na etapa final de documentação. A governança consolidada e a integração demonstrativa permanecem no escopo dos Blocos 5 e 6. O projeto ainda não possui notificações automáticas de alerta nem agendamento contínuo das execuções de scoring e drift.
+
 ## 3. Tecnologias
 
 ### Implementadas
@@ -35,25 +36,22 @@ A solução deverá contemplar:
 - joblib — persistência do pipeline treinado.
 - Pandera — contratos e validação bloqueante de dados.
 - Evidently AI — detecção estatística de data drift e relatórios HTML.
+- SQLite — persistência de eventos operacionais.
+- Litestar e Uvicorn — disponibilização HTTP de métricas.
+- Prometheus 3.16.0 — coleta e armazenamento temporal das métricas.
+- Grafana 12.2.0 — dashboards operacionais provisionados.
+- Docker Compose — orquestração local da infraestrutura de observabilidade.
 - setuptools — empacotamento.
 - pytest — testes unitários e de integração.
 - Ruff — lint e formatação.
 - Git e GitHub — controle de versões.
 
-### Planejadas para os próximos blocos
+### Etapas ainda planejadas
 
-- Prometheus — coleta de métricas.
-- Grafana — visualização de indicadores.
-- Docker Compose — infraestrutura local de observabilidade.
+- Bloco 5 — governança e privacidade consolidadas.
+- Bloco 6 — integração demonstrativa e preparação da entrega.
 
-A inclusão de uma tecnologia no planejamento não significa
-que ela já esteja instalada ou operacional.
-
-Os contratos Pandera e a inferência bloqueante foram
-implementados no Bloco 2. A simulação de produção,
-a detecção de drift e os relatórios de monitoramento
-foram implementados no Bloco 3. A observabilidade
-com Prometheus/Grafana permanece planejada.
+Os contratos Pandera e a inferência bloqueante pertencem ao Bloco 2; simulação de produção e detecção estatística de drift, ao Bloco 3. O Bloco 4 adiciona eventos operacionais persistidos, endpoint de métricas e visualização com Prometheus/Grafana. Os serviços são executados localmente; o processamento de lotes continua sob acionamento explícito.
 
 ## 4. Dataset
 
@@ -179,7 +177,7 @@ Verificar consistência das dependências:
 python -m pip check
 ```
 
-A suíte inclui testes unitários e de integração de preparação, treinamento, contratos de qualidade, inferência, simulação e monitoramento de drift. Após a integração funcional do Bloco 3, foram aprovados 211 testes automatizados.
+A suíte inclui testes unitários e de integração dos Blocos 0 a 4, abrangendo preparação, treinamento, qualidade, inferência, simulação, drift, instrumentação, métricas e contratos de dashboards. A regressão pós-merge da infraestrutura do Bloco 4 aprovou **349 testes automatizados**. Os números de testes de seções históricas abaixo correspondem aos marcos de cada bloco.
 
 ## 8. Roadmap de desenvolvimento
 
@@ -222,15 +220,15 @@ O projeto utiliza uma abordagem incremental, evitando antecipar dependências e 
 
 ### Resumo consolidado
 
-Estado consolidado após a integração funcional do Bloco 3:
+Estado consolidado após o merge `fc48d95` da infraestrutura do Bloco 4:
 
 | Bloco | Estado |
 |---|---|
 | 0 — Fundação e arquitetura | Concluído |
 | 1 — Dados e baseline | Concluído |
 | 2 — Contratos e inferência bloqueante | Concluído |
-| 3 — Simulação e detecção de drift | Implementação concluída; documentação em andamento |
-| 4 — Observabilidade | Não iniciado |
+| 3 — Simulação e detecção de drift | Concluído, com documentação integrada |
+| 4 — Observabilidade | Implementação concluída; documentação em andamento |
 | 5 — Governança e privacidade | Não iniciado |
 | 6 — Integração e demonstração | Não iniciado |
 
@@ -242,19 +240,22 @@ brutos e preparados, validação estruturada de lotes,
 preparação sem TARGET, inferência bloqueante e
 interface operacional de scoring.
 
-Na última validação funcional integrada à main:
+Na regressão pós-merge da infraestrutura do Bloco 4:
 
-- 211 testes automatizados foram aprovados.
-- Ruff lint e formatação foram aprovados.
-- pip check não identificou conflitos.
-- O modelo persistido produziu scores consistentes.
-- Lotes inválidos foram rejeitados sem produzir scores.
+- **349 testes automatizados aprovados**.
+- Ruff lint e formatação aprovados (73 arquivos Python formatados).
+- `pip check` sem conflitos.
+- Docker Compose válido, com exporter, Prometheus e Grafana em execução.
+- Coleta de métricas confirmada (`up=1`) e oito painéis carregados no Grafana.
+- Quality gate e demais contratos anteriores preservados.
 
 Referências técnicas:
 
 - [Arquitetura](docs/architecture.md).
 - [Contratos de qualidade](docs/quality-contracts.md).
 - [Reprodutibilidade](docs/reproducibility.md).
+- [Monitoramento de drift](docs/drift-monitoring.md).
+- [Observabilidade](docs/observability.md).
 
 As seções históricas abaixo registram a evolução
 incremental do projeto. Os estados intermediários
@@ -784,6 +785,60 @@ documentados em:
 
 `docs/drift-monitoring.md`
 
-O monitoramento contínuo de infraestrutura
-e a visualização com Prometheus/Grafana
-pertencem ao escopo planejado do Bloco 4.
+O monitoramento de infraestrutura com Prometheus/Grafana
+foi implementado posteriormente no Bloco 4. Esta seção
+preserva os resultados históricos do Bloco 3.
+
+
+## 15. Instrumentação e observabilidade — Bloco 4
+
+O Bloco 4 acrescenta instrumentação operacional aos fluxos por lote de scoring e monitoramento de drift. Os eventos são registrados localmente em SQLite; o exporter agrega eventos existentes e expõe métricas no endpoint `/metrics`, coletadas pelo Prometheus e apresentadas no Grafana.
+
+### 15.1. Componentes e contratos
+
+- **Eventos SQLite:** registro de execuções, status e resultados operacionais; banco local em `artifacts/observability/events.sqlite3`.
+- **Exporter:** `scripts/serve_metrics.py`, com interface de rede local `127.0.0.1` por padrão e `0.0.0.0` apenas quando explicitamente solicitado para o container.
+- **Prometheus:** serviço Docker `prometheus`, coleta de `exporter:8000/metrics` a cada 15 segundos e retenção configurada de sete dias.
+- **Grafana:** serviço Docker `grafana`, datasource provisionado e dashboard `Credit Risk Monitoring - Operations Overview` com oito painéis.
+
+As métricas de contagem são **gauges agregados sobre o histórico SQLite**. O Prometheus registra seus valores ao longo dos scrapes, sem reconstruir automaticamente os timestamps originais dos eventos. Não se deve aplicar `rate()` indiscriminadamente a essas séries nem interpretá-las como counters monotônicos nativos.
+
+### 15.2. Executar a infraestrutura local
+
+Pré-requisitos: Docker Desktop com engine Linux ativo; Git Bash no Windows; repositório clonado; arquivo `.env` local contendo `GRAFANA_ADMIN_PASSWORD` forte. Não versionar a senha. O exporter utiliza o diretório `artifacts/observability/` somente para leitura e pressupõe um banco operacional SQLite já criado.
+
+Na raiz do repositório:
+
+```bash
+docker compose config --quiet
+docker compose up -d --build
+docker compose ps
+```
+
+Serviços acessíveis no host:
+
+- Prometheus: <http://127.0.0.1:9090/targets>.
+- Grafana: <http://127.0.0.1:3000/d/credit-risk-operations>.
+- Exporter: acessível somente pela rede interna Docker na porta 8000, sem publicação no host.
+
+A autenticação inicial do Grafana utiliza o usuário `admin` e a senha configurada em `.env`. O datasource aponta internamente para `http://prometheus:9090`.
+
+Para interromper os serviços sem excluir volumes:
+
+```bash
+docker compose down
+```
+
+**Não** executar `docker compose down -v` se houver dados persistentes a preservar.
+
+### 15.3. Evidências de validação
+
+Na validação operacional do Bloco 4, a base SQLite continha seis eventos (duas execuções de monitoramento e quatro de scoring). As consultas retornaram seis execuções no total, uma falha operacional, duas ocorrências agregadas de violação de qualidade e uma execução com drift. O Prometheus identificou o exporter como `UP`, e os oito painéis foram disponibilizados pelo provisionamento do Grafana. Esses números descrevem um snapshot de demonstração, não uma amostra estatística de produção.
+
+Na regressão pós-merge da infraestrutura (`fc48d95`): **349 testes aprovados**, Ruff e `pip check` aprovados, Docker Compose validado e serviços em execução. O exporter foi verificado com `uid=10001` e volume SQLite montado com `RW=false`.
+
+### 15.4. Limitações e documentação
+
+A solução não agenda automaticamente os lotes de scoring/drift; o Prometheus realiza coleta periódica de métricas, não execução contínua do modelo. Não há alertas automáticos com notificações configurados, reconstrução de histórico temporal de eventos no Prometheus, retreinamento automático, implantação em nuvem ou garantias de conformidade regulatória integral.
+
+Consulte [Observabilidade — Bloco 4](docs/observability.md) para os contratos, catálogo de métricas, procedimentos de validação, segurança e limitações detalhadas.

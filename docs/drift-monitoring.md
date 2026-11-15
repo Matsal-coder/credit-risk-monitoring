@@ -884,12 +884,125 @@ Essas limitações delimitam o escopo
 do bloco e orientam o desenvolvimento
 dos próximos componentes.
 
-O Bloco 4 deverá consumir resultados
-estruturados de monitoramento para
-instrumentação, métricas e
-observabilidade operacional.
+Posteriormente, o Bloco 4 incorporou o registro de eventos
+operacionais e a infraestrutura Prometheus/Grafana. A lista acima
+registra os limites do **Bloco 3 na data de sua entrega**, e não
+as capacidades atuais do repositório. A integração está descrita
+na seção 15 e em `docs/observability.md`.
 
 O Bloco 5 deverá aprofundar
 governança, privacidade e
 análises de riscos associados
 ao uso do modelo.
+
+## 15. Integração posterior com a observabilidade — Bloco 4
+
+Esta seção documenta a instrumentação **adicionada após a conclusão
+do Bloco 3**. Ela não modifica os métodos estatísticos, a simulação,
+o quality gate, os resultados de referência ou os códigos de saída
+descritos nas seções anteriores.
+
+### 15.1. Registro operacional do monitoramento
+
+A interface `scripts/monitor_drift.py` passou a aceitar a opção
+`--events-db` para habilitar a persistência de eventos no SQLite.
+A opção não é obrigatória nas execuções históricas: sem ela,
+os fluxos estatísticos e os relatórios do Bloco 3 preservam sua
+finalidade original.
+
+Na execução instrumentada, os eventos operacionais representam o
+ciclo de vida do processamento e permitem distinguir:
+
+- Conclusão do monitoramento sem drift detectado.
+- Conclusão do monitoramento com drift detectado.
+- Rejeição por qualidade, antes do scoring e do detector.
+- Falha operacional durante a execução.
+
+Uma ocorrência de drift não transforma, por si só, a execução em
+falha: o cenário pode terminar com status operacional `completed`
+e código de saída `0`. A rejeição de qualidade mantém o código `2`
+e não gera scores nem relatórios de sucesso do monitoramento.
+
+### 15.2. Fluxo de dados até o dashboard
+
+```text
+scripts/monitor_drift.py
+        |
+        | --events-db
+        v
+artifacts/observability/events.sqlite3
+        |
+        v
+Metrics Exporter — GET /metrics
+        |
+        v
+Prometheus — coleta periódica
+        |
+        v
+Grafana — Operations Overview
+```
+
+O exporter consulta os eventos persistidos; **não executa**
+novos lotes de monitoramento. O Prometheus coleta métricas a
+cada 15 segundos na configuração local validada, mas não agenda
+as simulações nem o processamento de lotes externos.
+
+As famílias métricas relevantes para o monitoramento incluem
+`credit_risk_executions_count`, `credit_risk_drift_detected_count`,
+`credit_risk_quality_violations_count`, os agregados de duração,
+`credit_risk_running_executions` e o timestamp de último sucesso.
+As métricas são agregadas por pipeline e não apresentam
+`SK_ID_CURR`, probabilidades individuais ou `batch_id` como labels.
+O catálogo completo está em `docs/observability.md`.
+
+### 15.3. Reprodução de uma execução instrumentada
+
+Utilizar os mesmos arquivos locais e os mesmos parâmetros já
+documentados na seção 11.1, acrescentando a opção global
+`--events-db` **antes** do subcomando `simulate`:
+
+```bash
+python scripts/monitor_drift.py \
+  --reference data/processed/reference.csv \
+  --model artifacts/baseline_model.joblib \
+  --batch-id drift-strong-observability-example \
+  --events-db artifacts/observability/events.sqlite3 \
+  --json-output artifacts/drift-strong-observability-example.json \
+  --html-output artifacts/drift-strong-observability-example.html \
+  simulate \
+  --production-prepared data/processed/test.csv \
+  --scenario strong \
+  --seed 642
+```
+
+O comando pressupõe que os dados, o modelo e o diretório local
+de artefatos já existam. Os caminhos de saída e o `batch_id`
+devem ser inéditos para evitar colisões com execuções anteriores.
+A execução instrumentada registra novos eventos e, portanto,
+pode alterar os valores cumulativos exibidos no dashboard.
+
+O procedimento completo para iniciar a infraestrutura, verificar
+o exporter, consultar PromQL e conferir o Grafana está em
+`docs/reproducibility.md`, seção 16.
+
+### 15.4. Evidências e limites de interpretação
+
+Na demonstração operacional do Bloco 4, o histórico SQLite
+continha duas execuções de `monitoring`, uma delas com drift
+detectado. A duração média histórica observada para esse
+pipeline foi de aproximadamente 7,947 segundos. Esses valores
+representam **um snapshot local**, e não uma medição de produção
+ou um benchmark de desempenho.
+
+As métricas de contagem são `gauge` calculados sobre o histórico
+SQLite. O Prometheus registra valores nos instantes de coleta;
+ele não reconstrói retroativamente o horário original de cada
+evento. As contagens de violações não equivalem necessariamente
+à quantidade de clientes ou lotes afetados.
+
+Essa instrumentação não comprova degradação preditiva,
+concept drift, causalidade ou aumento real de inadimplência.
+Também não implementa execução agendada, notificações
+automáticas de alerta, retreinamento ou controles completos
+de conformidade regulatória. Essas distinções são detalhadas
+em `docs/observability.md`.

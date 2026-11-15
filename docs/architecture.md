@@ -147,14 +147,30 @@ foram aprovados 211 testes automatizados.
 A metodologia e os resultados estão
 documentados em `docs/drift-monitoring.md`.
 
+### Bloco 4 — Instrumentação e observabilidade
+
+**Estado: implementação funcional concluída e integrada à `main`; consolidação documental em andamento.**
+
+Componentes implementados:
+
+- Registro estruturado de eventos de scoring e monitoramento, com persistência SQLite.
+- Agregação de sete famílias métricas, expostas como gauges Prometheus.
+- Exporter HTTP com Litestar/Uvicorn, endpoint `GET /metrics`.
+- Docker Compose com exporter, Prometheus 3.16.0 e Grafana 12.2.0.
+- Datasource e dashboard de oito painéis provisionados por arquivos.
+- Testes de eventos, armazenamento, métricas, endpoint e contratos do dashboard.
+
+O merge funcional da infraestrutura foi registrado em `fc48d95`.
+A regressão após esse merge aprovou **349 testes**. O protocolo,
+as evidências e as limitações estão em `docs/observability.md`.
+
 ### Blocos ainda não implementados
 
-- Bloco 4: métricas, Prometheus, Grafana e observabilidade.
 - Bloco 5: governança e privacidade consolidadas.
 - Bloco 6: integração final e demonstração.
 
-Esses componentes permanecem planejados
-e não devem ser descritos como operacionais.
+Os Blocos 5 e 6 permanecem planejados. O Bloco 4 não implementa
+agendamento automático de scoring/drift nem alertas com notificações.
 
 ## 4. Decisões técnicas aprovadas
 
@@ -167,17 +183,18 @@ e não devem ser descritos como operacionais.
 | Validação de dados | Pandera | Contratos de dados integrados ao ecossistema Python |
 | Drift | Evidently AI e testes estatísticos | Monitoramento de mudanças de distribuição |
 | Execução | Pipeline Python local em lotes | Menor complexidade operacional inicial |
-| Observabilidade | Prometheus e Grafana | Coleta e visualização de métricas |
-| Infraestrutura | Docker Compose | Orquestração local dos serviços futuros |
+| Observabilidade | SQLite, Litestar/Uvicorn, Prometheus e Grafana | Persistência, exposição, coleta e visualização de métricas operacionais |
+| Infraestrutura | Docker Compose | Orquestração local dos serviços implementados |
 | Testes | pytest | Verificações automatizadas |
 | Lint e formatação | Ruff | Padronização e análise estática |
 | Governança | Documentação transversal | Privacidade e responsabilidade sobre os dados |
 
-As escolhas de tecnologias futuras não implicam que suas dependências estejam instaladas.
+As tecnologias de observabilidade listadas foram executadas e verificadas localmente no Bloco 4.
+Os controles de governança e integração futura não devem ser confundidos com funcionalidades já implementadas.
 
-## 5. Arquitetura lógica planejada
+## 5. Arquitetura lógica e evolução
 
-O fluxo principal previsto é:
+O fluxo abaixo registra a arquitetura conceitual original que orientou a implementação:
 
 ```text
 HOME CREDIT
@@ -219,11 +236,12 @@ PREDIÇÕES             ANÁLISE DE DRIFT
             GRAFANA
 ```
 
-Este diagrama é conceitual. Ele não define classes, APIs ou estruturas de arquivos definitivas.
+Este diagrama é conceitual e preservado como referência histórica de planejamento.
+A arquitetura física e os contratos de observabilidade efetivamente implementados
+estão descritos na seção 17 e em `docs/observability.md`.
+Uma rejeição pelo quality gate não equivale necessariamente a falha operacional.
 
-Os componentes deverão evoluir conforme seus respectivos blocos forem implementados.
-
-## 6. Responsabilidades dos componentes futuros
+## 6. Responsabilidades dos componentes por bloco
 
 ### 6.1 Preparação e treinamento
 
@@ -312,9 +330,11 @@ Responsável por:
 
 **Bloco responsável:** 6.
 
-## 7. Contratos arquiteturais planejados
+## 7. Contratos arquiteturais e sua evolução
 
-Os contratos abaixo representam comportamentos esperados, não interfaces Python já implementadas.
+Esta seção preserva contratos originalmente planejados e sua motivação.
+As interfaces efetivamente implementadas até o Bloco 4 estão descritas
+nas seções de implementação e em `docs/observability.md`.
 
 ### 7.1 Contrato de entrada
 
@@ -1258,3 +1278,190 @@ Os contratos de entrada e o quality gate
 permanecem documentados em:
 
 `docs/quality-contracts.md`
+
+
+## 17. Arquitetura implementada — Bloco 4
+
+### 17.1. Objetivo e fronteiras
+
+O Bloco 4 acrescenta **observabilidade operacional** às CLIs de scoring
+e monitoramento estatístico de drift já existentes, sem alterar o
+baseline, suas 17 features, o threshold `0.1406724340221902`, os
+contratos Pandera ou as regras de detecção do Evidently.
+
+A instrumentação registra eventos de execução em banco SQLite local;
+um exporter HTTP agrega os eventos persistidos em métricas Prometheus;
+o Prometheus realiza scrapes periódicos; e o Grafana consulta as
+séries temporais para visualização. O pipeline de negócio continua
+sendo executado por acionamento explícito, não por agendamento da stack.
+
+### 17.2. Fluxo de dados e componentes
+
+```text
+scripts/score_batch.py        scripts/monitor_drift.py
+         |                             |
+         +----------+------------------+
+                    |
+             eventos operacionais
+                    |
+                    v
+   artifacts/observability/events.sqlite3
+               (SQLite local)
+                    |
+              leitura pelo exporter
+                    v
+         Litestar GET /metrics :8000
+                    |
+            scrape a cada 15 s
+                    v
+              Prometheus :9090
+                    |
+                  PromQL
+                    v
+               Grafana :3000
+       Operations Overview (8 painéis)
+```
+
+| Módulo ou arquivo | Papel na arquitetura |
+|---|---|
+| `observability/events.py` | Contrato e validação dos eventos de execução |
+| `observability/store.py` | Persistência e leitura estruturada em SQLite |
+| `observability/metrics_catalog.py` | Definição das famílias e labels permitidos |
+| `observability/metrics_aggregation.py` | Consolidação das métricas a partir dos eventos |
+| `observability/metrics_exposition.py` | Exposição no formato texto Prometheus |
+| `observability/metrics_http.py` | Aplicação HTTP e rota `/metrics` |
+| `scripts/serve_metrics.py` | CLI de inicialização do exporter |
+| `infra/Dockerfile.exporter` | Imagem Linux do exporter |
+| `compose.yaml` | Serviços, rede, volumes e portas locais |
+| `infra/prometheus/prometheus.yml` | Job de scrape `credit-risk-exporter` |
+| `infra/grafana/provisioning/` | Datasource e provider de dashboards |
+| `infra/grafana/dashboards/operations-overview.json` | Dashboard versionado |
+
+As referências abreviadas `observability/*.py` correspondem ao pacote
+`src/credit_risk_monitoring/observability/`.
+
+### 17.3. Contrato dos eventos operacionais
+
+As CLIs instrumentadas utilizam a opção `--events-db` para apontar
+o armazenamento operacional. O histórico é persistido em
+`artifacts/observability/events.sqlite3`, ignorado pelo Git.
+O componente `SQLiteEventStore` fornece leitura sequencial em lotes
+por `iter_events(chunk_size=500)`.
+
+Os estados considerados são `running`, `completed` e `failed`.
+**Status de execução, resultado de qualidade e resultado de drift são
+informações distintas**: a rejeição bloqueante de um lote pode produzir
+código de saída `2` sem gerar scores; um monitoramento com drift pode
+terminar normalmente com código `0`; falhas operacionais tratadas podem
+retornar `1` e ser registradas como `failed`.
+
+O armazenamento de eventos complementa os relatórios existentes e
+não transforma a execução local por lotes em um serviço contínuo.
+
+### 17.4. Contrato das métricas
+
+O exporter expõe sete famílias do tipo `gauge`, reconstruídas a partir
+do histórico persistido. Os labels autorizados são agregados e não
+incluem identificadores individuais, `batch_id`, scores ou features.
+
+| Família | Labels | Semântica |
+|---|---|---|
+| `credit_risk_executions_count` | `pipeline`, `execution_status` | Quantidade de execuções por estado |
+| `credit_risk_quality_violations_count` | `pipeline` | Ocorrências agregadas de violações |
+| `credit_risk_drift_detected_count` | `pipeline` | Execuções com drift detectado |
+| `credit_risk_execution_duration_seconds_sum` | `pipeline` | Soma das durações registradas |
+| `credit_risk_execution_duration_seconds_count` | `pipeline` | Número de durações registradas |
+| `credit_risk_running_executions` | `pipeline` | Estados `running` persistidos |
+| `credit_risk_last_success_timestamp_seconds` | `pipeline` | Timestamp da última conclusão bem-sucedida |
+
+Os pipelines demonstrados são `scoring` e `monitoring`. Os sufixos
+`_sum` e `_count` de duração são nomes de gauges agregados, **não**
+constituem um `summary` ou `histogram` nativo.
+
+A média histórica da duração por pipeline é calculada por:
+
+```promql
+sum by (pipeline) (credit_risk_execution_duration_seconds_sum)
+/
+sum by (pipeline) (credit_risk_execution_duration_seconds_count)
+```
+
+As contagens são instantâneos acumulados do SQLite observados no
+instante de scrape, não counters de incremento contínuo; `rate()`
+não deve ser aplicado indiscriminadamente. O Prometheus não reconstrói
+a data original dos eventos anteriores ao primeiro scrape.
+
+### 17.5. Interface HTTP e armazenamento
+
+O endpoint `GET /metrics` usa Litestar/Uvicorn. A CLI
+`scripts/serve_metrics.py` utiliza `127.0.0.1` como host padrão e
+permite `0.0.0.0` somente quando configurado explicitamente, como
+ocorre no Docker Compose. Falhas na leitura do SQLite são tratadas
+como falhas de exposição HTTP, não como métricas aparentemente zeradas.
+
+No Compose, o exporter utiliza usuário não privilegiado (`uid=10001`),
+filesystem raiz em somente leitura e bind mount de
+`artifacts/observability` com `RW=false`. A porta 8000 não é publicada
+no host. Os acessos locais externos ao Compose são restritos a
+`127.0.0.1:9090` (Prometheus) e `127.0.0.1:3000` (Grafana).
+Prometheus e Grafana utilizam volumes nomeados de persistência próprios.
+
+### 17.6. Provisionamento e visualização
+
+O serviço Prometheus utiliza `prom/prometheus:v3.16.0`, scrape de
+`exporter:8000/metrics` a cada 15 segundos e retenção configurada
+de sete dias. O Grafana utiliza `grafana/grafana:12.2.0`, recebe
+um datasource com UID `credit-risk-prometheus` e disponibiliza o
+dashboard de UID `credit-risk-operations`.
+
+O dashboard possui oito painéis: execuções totais, falhas, violações
+de qualidade, drift, execuções por status/pipeline, duração média por
+pipeline, execuções em andamento e disponibilidade do exporter.
+Seus arquivos são versionados e provisionados sem importação manual.
+
+A senha administrativa é fornecida por `GRAFANA_ADMIN_PASSWORD` em
+`.env` local, ignorado pelo Git. O provisionamento não representa
+uma solução de gestão centralizada de segredos.
+
+### 17.7. Evidências e reprodutibilidade
+
+Na execução local observada em 15/11/2026:
+
+- Histórico SQLite com seis eventos: quatro de scoring e dois de monitoring.
+- Exporter com `GET /metrics` HTTP 200 e 18 amostras.
+- Target Prometheus `up`, sem erro de scrape, com `up=1`.
+- Três execuções de scoring concluídas e uma com falha operacional.
+- Duas execuções de monitoring concluídas; nenhuma execução em andamento.
+- Duas ocorrências agregadas de violação de qualidade e uma execução com drift.
+- Duração média histórica aproximada: 7,947 s para monitoring e 0,103 s para scoring.
+- Grafana com datasource e dashboard provisionados, oito painéis e API HTTP 200.
+- Verificação do container do exporter com `uid=10001` e bind mount `RW=false`.
+
+O merge de infraestrutura `fc48d95` foi validado com **349 testes
+aprovados**, Ruff lint e formatação aprovados, `pip check` sem
+conflitos e `docker compose config --quiet` válido. A `main` foi
+publicada em `origin/main` e a branch funcional excluída localmente.
+Esses valores são evidências de demonstração, não indicadores
+representativos de operação produtiva.
+
+O roteiro detalhado de reprodução, os comandos de verificação e o
+catálogo das métricas estão em `docs/observability.md`.
+
+### 17.8. Limitações e continuidade
+
+A arquitetura atual **não** implementa agendamento contínuo de
+scoring/drift, notificações automáticas de alerta, reconstrução
+retroativa do histórico de eventos como séries temporais, retreinamento
+automático, implantação em nuvem, autenticação de rede completa, TLS,
+backups automatizados ou alta disponibilidade.
+
+O estado persistido `running` pode permanecer obsoleto caso uma
+execução seja interrompida antes da transição terminal. A retenção
+de sete dias no Prometheus não elimina automaticamente os eventos
+armazenados no SQLite. Os dados de referência e os lotes de drift
+são históricos ou simulados, sem demonstração de concept drift nem
+degradação preditiva em produção.
+
+O Bloco 5 deverá aprofundar governança, privacidade, retenção,
+vieses e responsabilidades; o Bloco 6 deverá consolidar a
+demonstração integrada e as evidências finais.
