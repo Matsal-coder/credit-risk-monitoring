@@ -9,8 +9,13 @@ import pandas as pd
 
 from credit_risk_monitoring.modeling.inference import (
     DEFAULT_MODEL_PATH,
+    InferenceResult,
     run_quality_gated_inference,
 )
+from credit_risk_monitoring.observability.adapters import build_scoring_event
+from credit_risk_monitoring.observability.events import start_event
+from credit_risk_monitoring.observability.execution import execute_observed
+from credit_risk_monitoring.observability.store import SQLiteEventStore
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -45,6 +50,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="CSV opcional com probabilidades individuais.",
     )
+    parser.add_argument(
+        "--events-db",
+        type=Path,
+        default=None,
+        help="SQLite opcional para registrar eventos operacionais.",
+    )
     return parser
 
 
@@ -76,7 +87,7 @@ def _check_output_paths(
 
 
 def _write_outputs(
-    result,
+    result: InferenceResult,
     report_path: Path,
     scores_path: Path | None,
 ) -> None:
@@ -127,11 +138,8 @@ def _write_outputs(
         raise
 
 
-def main(argv: list[str] | None = None) -> int:
-    """Executa o lote e retorna codigo de saida operacional."""
-    parser = build_parser()
-    args = parser.parse_args(argv)
-
+def _run_scoring(args: argparse.Namespace) -> InferenceResult:
+    """Executa validacao e inferencia existentes."""
     if not args.batch_id.strip():
         raise ValueError("batch_id deve ser nao vazio.")
 
@@ -142,21 +150,20 @@ def main(argv: list[str] | None = None) -> int:
         args.scores_output,
     )
 
-    # Leitura em memoria; nao altera o arquivo original.
     batch = pd.read_csv(args.input, low_memory=False)
 
-    result = run_quality_gated_inference(
+    return run_quality_gated_inference(
         batch,
         batch_id=args.batch_id,
         model_path=args.model,
     )
 
-    _write_outputs(
-        result,
-        report_path=args.report_output,
-        scores_path=args.scores_output,
-    )
 
+def _print_result(
+    args: argparse.Namespace,
+    result: InferenceResult,
+) -> int:
+    """Apresenta o resultado com a semantica historica da CLI."""
     if not result.approved:
         print(
             f"REJECTED: batch_id={args.batch_id}; "
@@ -170,16 +177,87 @@ def main(argv: list[str] | None = None) -> int:
         f"scored_rows={result.scored_rows}; "
         f"report={args.report_output}"
     )
-
     return 0
+
+
+def run_cli(args: argparse.Namespace) -> int:
+    """Executa o fluxo tradicional sem persistencia operacional."""
+    result = _run_scoring(args)
+
+    _write_outputs(
+        result,
+        report_path=args.report_output,
+        scores_path=args.scores_output,
+    )
+
+    return _print_result(args, result)
+
+
+def _validate_events_db_path(args: argparse.Namespace) -> None:
+    """Impede que o SQLite colida com entradas ou saidas."""
+    database = args.events_db.resolve()
+
+    protected = {
+        args.input.resolve(),
+        args.model.resolve(),
+        args.report_output.resolve(),
+    }
+
+    if args.scores_output is not None:
+        protected.add(args.scores_output.resolve())
+
+    if database in protected:
+        raise ValueError("Banco de eventos coincide com entrada ou saida.")
+
+
+def run_observed_cli(args: argparse.Namespace) -> int:
+    """Executa scoring com eventos operacionais persistidos."""
+    _validate_events_db_path(args)
+
+    store = SQLiteEventStore(args.events_db)
+
+    initial = start_event(
+        batch_id=args.batch_id,
+        pipeline="scoring",
+        scenario_id="not_applicable",
+    )
+
+    def postprocess(result: InferenceResult) -> None:
+        _write_outputs(
+            result,
+            report_path=args.report_output,
+            scores_path=args.scores_output,
+        )
+
+    result, event = execute_observed(
+        store=store,
+        initial=initial,
+        operation=lambda: _run_scoring(args),
+        build_event=build_scoring_event,
+        postprocess=postprocess,
+    )
+
+    # Informar aprovacao somente apos persistencia terminal.
+    _print_result(args, result)
+    return event.exit_code
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Ponto de entrada compativel com o comando anterior."""
+    parser = build_parser()
+    args = parser.parse_args(argv)
+
+    if args.events_db is not None:
+        return run_observed_cli(args)
+
+    return run_cli(args)
 
 
 if __name__ == "__main__":
     try:
         exit_code = main()
     except Exception as exc:
-        # Nao imprime dados, payloads nem mensagens potencialmente
-        # sensiveis provenientes das excecoes internas.
+        # Preserva o contrato de erro sanitizado da CLI.
         print(
             f"OPERATIONAL_ERROR: {type(exc).__name__}",
             file=sys.stderr,

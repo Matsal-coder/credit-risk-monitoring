@@ -6,13 +6,20 @@ from pathlib import Path
 
 import pandas as pd
 
-from credit_risk_monitoring.drift.monitoring import monitor_production_batch
+from credit_risk_monitoring.drift.monitoring import (
+    MonitoringResult,
+    monitor_production_batch,
+)
 from credit_risk_monitoring.drift.reporting import (
     save_monitoring_html,
     save_monitoring_json,
 )
 from credit_risk_monitoring.drift.simulation import simulate_production_batch
 from credit_risk_monitoring.modeling.inference import DEFAULT_MODEL_PATH
+from credit_risk_monitoring.observability.adapters import build_monitoring_event
+from credit_risk_monitoring.observability.events import start_event
+from credit_risk_monitoring.observability.execution import execute_observed
+from credit_risk_monitoring.observability.store import SQLiteEventStore
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -49,6 +56,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         required=True,
         help="Destino do relatorio HTML Evidently.",
+    )
+    parser.add_argument(
+        "--events-db",
+        type=Path,
+        default=None,
+        help="SQLite opcional para registrar eventos operacionais.",
     )
 
     modes = parser.add_subparsers(
@@ -122,11 +135,15 @@ def validate_paths(
             raise FileExistsError(f"Arquivo de saida ja existe: {output}")
 
 
-def run_cli(args: argparse.Namespace) -> int:
-    """Executa monitoramento e exporta resultados aprovados."""
-    production_path = (
-        args.production_prepared if args.mode == "simulate" else args.production_raw
-    )
+def _production_path(args: argparse.Namespace) -> Path:
+    return args.production_prepared if args.mode == "simulate" else args.production_raw
+
+
+def _run_pipeline(
+    args: argparse.Namespace,
+) -> tuple[MonitoringResult, int | None]:
+    """Executa o pipeline existente sem persistir observabilidade."""
+    production_path = _production_path(args)
 
     validate_paths(
         reference=args.reference,
@@ -167,6 +184,15 @@ def run_cli(args: argparse.Namespace) -> int:
         model_path=args.model,
     )
 
+    return result, changed_rows
+
+
+def _process_result(
+    args: argparse.Namespace,
+    result: MonitoringResult,
+    changed_rows: int | None,
+) -> int:
+    """Apresenta resultados e exporta relatorios quando aprovados."""
     print("Batch:", result.batch_id)
     print("Scenario:", result.scenario_id)
     print("Quality status:", result.inference.status)
@@ -183,9 +209,6 @@ def run_cli(args: argparse.Namespace) -> int:
     if result.drift is None or result.snapshot is None:
         raise RuntimeError("Monitoramento aprovado sem resultados completos.")
 
-    # Os dois destinos foram verificados antes do processamento.
-    # Mantemos rollback dos arquivos criados caso a segunda
-    # exportacao falhe.
     created_outputs: list[Path] = []
 
     try:
@@ -216,18 +239,86 @@ def run_cli(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_cli(args: argparse.Namespace) -> int:
+    """Preserva a interface tradicional sem observabilidade."""
+    result, changed_rows = _run_pipeline(args)
+    return _process_result(args, result, changed_rows)
+
+
+def _validate_events_db_path(args: argparse.Namespace) -> None:
+    """Evita colisao do banco com entradas e relatorios."""
+    database = args.events_db.resolve()
+    protected = {
+        args.reference.resolve(),
+        _production_path(args).resolve(),
+        args.model.resolve(),
+        args.json_output.resolve(),
+        args.html_output.resolve(),
+    }
+
+    if database in protected:
+        raise ValueError("Banco de eventos coincide com entrada ou saida.")
+
+
+def run_observed_cli(args: argparse.Namespace) -> int:
+    """Executa monitoramento instrumentado com persistencia SQLite."""
+    _validate_events_db_path(args)
+
+    store = SQLiteEventStore(args.events_db)
+
+    scenario_id = args.scenario if args.mode == "simulate" else "external"
+
+    initial = start_event(
+        batch_id=args.batch_id,
+        pipeline="monitoring",
+        scenario_id=scenario_id,
+    )
+
+    changed_rows: int | None = None
+
+    def operation() -> MonitoringResult:
+        nonlocal changed_rows
+        result, changed_rows = _run_pipeline(args)
+        return result
+
+    def postprocess(result: MonitoringResult) -> None:
+        _process_result(args, result, changed_rows)
+
+    _, event = execute_observed(
+        store=store,
+        initial=initial,
+        operation=operation,
+        build_event=build_monitoring_event,
+        postprocess=postprocess,
+    )
+
+    return event.exit_code
+
+
 def main(argv: list[str] | None = None) -> int:
     """Ponto de entrada da CLI."""
     parser = build_parser()
     args = parser.parse_args(argv)
 
     try:
+        if args.events_db is not None:
+            return run_observed_cli(args)
+
         return run_cli(args)
+
     except Exception as exc:
-        print(
-            f"Operational error: {type(exc).__name__}: {exc}",
-            file=sys.stderr,
-        )
+        if args.events_db is not None:
+            # Nao expor paths nem mensagens potencialmente sensiveis.
+            print(
+                f"OPERATIONAL_ERROR: {type(exc).__name__}",
+                file=sys.stderr,
+            )
+        else:
+            # Mantem a apresentacao historica da CLI nao instrumentada.
+            print(
+                f"Operational error: {type(exc).__name__}: {exc}",
+                file=sys.stderr,
+            )
         return 1
 
 
