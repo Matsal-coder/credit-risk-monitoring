@@ -19,6 +19,10 @@ from credit_risk_monitoring.modeling.inference import DEFAULT_MODEL_PATH
 from credit_risk_monitoring.observability.adapters import build_monitoring_event
 from credit_risk_monitoring.observability.events import start_event
 from credit_risk_monitoring.observability.execution import execute_observed
+from credit_risk_monitoring.observability.publication import (
+    PublicationRollbackError,
+    PublicationTracker,
+)
 from credit_risk_monitoring.observability.store import SQLiteEventStore
 
 
@@ -191,19 +195,24 @@ def _process_result(
     args: argparse.Namespace,
     result: MonitoringResult,
     changed_rows: int | None,
+    *,
+    publication_tracker: PublicationTracker | None = None,
+    announce: bool = True,
 ) -> int:
-    """Apresenta resultados e exporta relatorios quando aprovados."""
-    print("Batch:", result.batch_id)
-    print("Scenario:", result.scenario_id)
-    print("Quality status:", result.inference.status)
-    print("Total rows:", result.inference.total_rows)
-    print("Scored rows:", result.inference.scored_rows)
+    """Exporta relatorios com rastreamento opcional da publicacao."""
+    if announce:
+        print("Batch:", result.batch_id)
+        print("Scenario:", result.scenario_id)
+        print("Quality status:", result.inference.status)
+        print("Total rows:", result.inference.total_rows)
+        print("Scored rows:", result.inference.scored_rows)
 
-    if changed_rows is not None:
-        print("Changed rows:", changed_rows)
+        if changed_rows is not None:
+            print("Changed rows:", changed_rows)
 
     if not result.approved:
-        print("Monitoring rejected by quality gate.")
+        if announce:
+            print("Monitoring rejected by quality gate.")
         return 2
 
     if result.drift is None or result.snapshot is None:
@@ -218,23 +227,45 @@ def _process_result(
         )
         created_outputs.append(saved_json)
 
+        if publication_tracker is not None:
+            publication_tracker.register(saved_json)
+
         saved_html = save_monitoring_html(
             result,
             args.html_output,
         )
         created_outputs.append(saved_html)
 
-    except Exception:
-        for created in created_outputs:
-            created.unlink(missing_ok=True)
+        if publication_tracker is not None:
+            publication_tracker.register(saved_html)
+
+    except Exception as exc:
+        if publication_tracker is None:
+            # Preserva o comportamento tradicional da CLI.
+            for created in reversed(created_outputs):
+                created.unlink(missing_ok=True)
+        else:
+            registered = {artifact.path for artifact in publication_tracker.artifacts}
+
+            untracked = [path for path in created_outputs if path not in registered]
+
+            publication_tracker.rollback()
+
+            if untracked:
+                raise PublicationRollbackError(
+                    "Publicacao de drift falhou com "
+                    "artefatos sem identidade confirmada."
+                ) from exc
+
         raise
 
-    print("Features analyzed:", result.drift.features_analyzed)
-    print("Features drifted:", result.drift.features_drifted)
-    print("Drift share:", result.drift.drift_share)
-    print("Drift detected:", result.drift.drift_detected)
-    print("JSON output:", saved_json)
-    print("HTML output:", saved_html)
+    if announce:
+        print("Features analyzed:", result.drift.features_analyzed)
+        print("Features drifted:", result.drift.features_drifted)
+        print("Drift share:", result.drift.drift_share)
+        print("Drift detected:", result.drift.drift_detected)
+        print("JSON output:", saved_json)
+        print("HTML output:", saved_html)
 
     return 0
 
@@ -260,8 +291,38 @@ def _validate_events_db_path(args: argparse.Namespace) -> None:
         raise ValueError("Banco de eventos coincide com entrada ou saida.")
 
 
+def _announce_result(
+    args: argparse.Namespace,
+    result: MonitoringResult,
+    changed_rows: int | None,
+) -> None:
+    """Apresenta resultado depois da confirmacao terminal."""
+    print("Batch:", result.batch_id)
+    print("Scenario:", result.scenario_id)
+    print("Quality status:", result.inference.status)
+    print("Total rows:", result.inference.total_rows)
+    print("Scored rows:", result.inference.scored_rows)
+
+    if changed_rows is not None:
+        print("Changed rows:", changed_rows)
+
+    if not result.approved:
+        print("Monitoring rejected by quality gate.")
+        return
+
+    if result.drift is None:
+        raise RuntimeError("Monitoramento aprovado sem resultado de drift.")
+
+    print("Features analyzed:", result.drift.features_analyzed)
+    print("Features drifted:", result.drift.features_drifted)
+    print("Drift share:", result.drift.drift_share)
+    print("Drift detected:", result.drift.drift_detected)
+    print("JSON output:", args.json_output)
+    print("HTML output:", args.html_output)
+
+
 def run_observed_cli(args: argparse.Namespace) -> int:
-    """Executa monitoramento instrumentado com persistencia SQLite."""
+    """Executa monitoramento com publicacao confirmada."""
     _validate_events_db_path(args)
 
     store = SQLiteEventStore(args.events_db)
@@ -275,6 +336,7 @@ def run_observed_cli(args: argparse.Namespace) -> int:
     )
 
     changed_rows: int | None = None
+    publication_tracker = PublicationTracker()
 
     def operation() -> MonitoringResult:
         nonlocal changed_rows
@@ -282,15 +344,25 @@ def run_observed_cli(args: argparse.Namespace) -> int:
         return result
 
     def postprocess(result: MonitoringResult) -> None:
-        _process_result(args, result, changed_rows)
+        _process_result(
+            args,
+            result,
+            changed_rows,
+            publication_tracker=publication_tracker,
+            announce=False,
+        )
 
-    _, event = execute_observed(
+    result, event = execute_observed(
         store=store,
         initial=initial,
         operation=operation,
         build_event=build_monitoring_event,
         postprocess=postprocess,
+        rollback_publication=publication_tracker.rollback,
     )
+
+    # Anunciar resultados somente apos persistencia terminal.
+    _announce_result(args, result, changed_rows)
 
     return event.exit_code
 

@@ -7,6 +7,9 @@ from pathlib import Path
 import pytest
 
 from credit_risk_monitoring.modeling.inference import InferenceResult
+from credit_risk_monitoring.observability.publication import (
+    PublicationRollbackError,
+)
 from credit_risk_monitoring.observability.store import SQLiteEventStore
 from credit_risk_monitoring.quality.results import (
     QualityViolation,
@@ -255,3 +258,276 @@ def test_existing_report_records_operational_failure(cli, paths):
     assert event.quality_status == "not_evaluated"
     assert event.error_type == "FileExistsError"
     assert paths["report"].read_text(encoding="utf-8") == "original"
+
+
+def test_terminal_failure_after_scoring_publication(
+    cli,
+    paths,
+    monkeypatch,
+    capsys,
+):
+    """Falha terminal nao pode manter publicacao inconclusiva."""
+    mock_inference(cli, monkeypatch, make_result())
+
+    original_store = cli.SQLiteEventStore
+    stores = []
+
+    class FailingTerminalStore(original_store):
+        def finish(self, event):
+            raise OSError("simulated SQLite terminal failure")
+
+    def make_store(path):
+        store = FailingTerminalStore(path)
+        stores.append(store)
+        return store
+
+    monkeypatch.setattr(cli, "SQLiteEventStore", make_store)
+
+    args = arguments(cli, paths, with_scores=True)
+
+    with pytest.raises(
+        OSError,
+        match="simulated SQLite terminal failure",
+    ):
+        cli.run_observed_cli(args)
+
+    output = capsys.readouterr()
+
+    assert "APPROVED:" not in output.out
+    assert "REJECTED:" not in output.out
+
+    assert len(stores) == 1
+    persisted = stores[0].list_events()
+
+    assert len(persisted) == 1
+    assert persisted[0].execution_status == "running"
+
+    # O SQLite nao confirmou a conclusao.
+    # A publicacao deve ser compensada quando o estado
+    # running puder ser confirmado com seguranca.
+    assert not paths["report"].exists()
+    assert not paths["scores"].exists()
+
+
+def test_terminal_failure_with_unavailable_sqlite_preserves_outputs(
+    cli,
+    paths,
+    monkeypatch,
+    capsys,
+):
+    """Estado terminal indeterminado preserva artefatos."""
+    mock_inference(cli, monkeypatch, make_result())
+
+    original_store = cli.SQLiteEventStore
+
+    class UnavailableTerminalStore(original_store):
+        def finish(self, event):
+            raise OSError("simulated terminal write failure")
+
+        def get(self, execution_id):
+            raise OSError("simulated SQLite read failure")
+
+    monkeypatch.setattr(
+        cli,
+        "SQLiteEventStore",
+        UnavailableTerminalStore,
+    )
+
+    args = arguments(cli, paths, with_scores=True)
+
+    with pytest.raises(OSError):
+        cli.run_observed_cli(args)
+
+    captured = capsys.readouterr()
+
+    assert "APPROVED:" not in captured.out
+    assert "REJECTED:" not in captured.out
+
+    assert paths["report"].is_file()
+    assert paths["scores"].is_file()
+
+    # A leitura interna falhou, mas o banco pode ser
+    # reaberto fora da simulacao para inspecao.
+    persisted = original_store(paths["database"]).list_events()
+
+    assert len(persisted) == 1
+    assert persisted[0].execution_status == "running"
+
+
+def test_terminal_failure_preserves_replaced_scoring_report(
+    cli,
+    paths,
+    monkeypatch,
+    capsys,
+):
+    """Nao exclui relatorio substituido antes da compensacao."""
+    mock_inference(cli, monkeypatch, make_result())
+
+    original_store = cli.SQLiteEventStore
+
+    class ReplacingTerminalStore(original_store):
+        def finish(self, event):
+            replacement = paths["report"].parent / "replacement.json"
+            replacement.write_text(
+                "replacement-content",
+                encoding="utf-8",
+            )
+            replacement.replace(paths["report"])
+            raise OSError("simulated terminal failure")
+
+    monkeypatch.setattr(
+        cli,
+        "SQLiteEventStore",
+        ReplacingTerminalStore,
+    )
+
+    args = arguments(cli, paths, with_scores=True)
+
+    with pytest.raises(
+        PublicationRollbackError,
+        match="Identidade de artefato alterada",
+    ):
+        cli.run_observed_cli(args)
+
+    captured = capsys.readouterr()
+
+    assert "APPROVED:" not in captured.out
+    assert "REJECTED:" not in captured.out
+
+    assert paths["report"].read_text(encoding="utf-8") == "replacement-content"
+
+    # A verificacao integral bloqueia a exclusao de
+    # outros arquivos quando detecta identidade divergente.
+    assert paths["scores"].is_file()
+
+    persisted = original_store(paths["database"]).list_events()
+
+    assert len(persisted) == 1
+    assert persisted[0].execution_status == "running"
+
+
+def test_scoring_finish_error_after_commit_preserves_outputs(
+    cli,
+    paths,
+    monkeypatch,
+    capsys,
+):
+    """Excecao apos commit nao deve excluir arquivos publicados."""
+    mock_inference(cli, monkeypatch, make_result())
+
+    original_store = cli.SQLiteEventStore
+
+    class PostCommitFailureStore(original_store):
+        def finish(self, event):
+            super().finish(event)
+            raise OSError("simulated failure after commit")
+
+    monkeypatch.setattr(
+        cli,
+        "SQLiteEventStore",
+        PostCommitFailureStore,
+    )
+
+    with pytest.raises(
+        OSError,
+        match="simulated failure after commit",
+    ):
+        cli.run_observed_cli(arguments(cli, paths, with_scores=True))
+
+    captured = capsys.readouterr()
+
+    assert "APPROVED:" not in captured.out
+    assert paths["report"].is_file()
+    assert paths["scores"].is_file()
+
+    event = original_store(paths["database"]).list_events()[0]
+
+    assert event.execution_status == "completed"
+    assert event.exit_code == 0
+
+
+def test_scoring_registration_failure_preserves_untracked_report(
+    cli,
+    paths,
+    monkeypatch,
+    capsys,
+):
+    """Falha de registro preserva relatorio sem identidade confirmada."""
+    from credit_risk_monitoring.observability.publication import (
+        PublicationRollbackError,
+    )
+
+    mock_inference(cli, monkeypatch, make_result())
+
+    def fail_register(self, path):
+        if path == paths["report"]:
+            raise OSError("simulated identity capture failure")
+
+        return original_register(self, path)
+
+    original_register = cli.PublicationTracker.register
+
+    monkeypatch.setattr(
+        cli.PublicationTracker,
+        "register",
+        fail_register,
+    )
+
+    with pytest.raises(
+        PublicationRollbackError,
+        match="artefatos sem identidade confirmada",
+    ):
+        cli.run_observed_cli(arguments(cli, paths, with_scores=True))
+
+    captured = capsys.readouterr()
+
+    assert "APPROVED:" not in captured.out
+    assert paths["report"].is_file()
+    assert not paths["scores"].exists()
+
+    event = SQLiteEventStore(paths["database"]).list_events()[0]
+
+    assert event.execution_status == "failed"
+    assert event.exit_code == 1
+
+
+def test_scoring_process_sanitizes_operational_failure(tmp_path):
+    """Processo real retorna Exit 1 sem expor detalhe sensivel."""
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    project_root = Path(__file__).resolve().parents[2]
+    script = project_root / "scripts" / "score_batch.py"
+
+    # Arquivo inexistente para provocar erro operacional
+    # durante uma execucao instrumentada.
+    missing_input = tmp_path / "sensitive-customer-input.csv"
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--input",
+            str(missing_input),
+            "--batch-id",
+            "operational-error-test",
+            "--model",
+            str(tmp_path / "model.joblib"),
+            "--report-output",
+            str(tmp_path / "report.json"),
+            "--events-db",
+            str(tmp_path / "events.sqlite"),
+        ],
+        cwd=project_root,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
+    )
+
+    assert completed.returncode == 1
+    assert completed.stdout == ""
+    assert "OPERATIONAL_ERROR:" in completed.stderr
+    assert str(missing_input) not in completed.stderr
+    assert not (tmp_path / "report.json").exists()
