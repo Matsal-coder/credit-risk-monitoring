@@ -24,7 +24,7 @@ A solução deverá contemplar:
 - Monitoramento de infraestrutura e execução.
 - Documentação de privacidade, LGPD e governança.
 
-**Estado atual:** os Blocos 0 a 4 estão concluídos e integrados à `main`, incluindo a correção P0 das três regras de alerta Prometheus. O Bloco 5 possui documentação de governança e privacidade, além de análise quantitativa agregada de fairness no conjunto de teste, com avaliação de vieses e limitações de causalidade. O Bloco 6 permanece responsável pela integração demonstrativa e preparação da entrega final. O sistema não executa automaticamente as CLIs de scoring/drift, não possui notificações externas de alertas e não representa um ambiente produtivo de concessão de crédito.
+**Estado atual:** os Blocos 0 a 4 estão concluídos e integrados à `main`, incluindo a correção P0 das três regras de alerta Prometheus. O Bloco 5 está concluído, incluindo governança, privacidade, fairness agregado e limitações de causalidade. O Bloco 6 concluiu a integração demonstrativa e consolidou suas evidências técnicas; a publicação do vídeo STAR e o envio dos links de entrega permanecem pendentes. O sistema não executa automaticamente as CLIs de scoring/drift, não possui notificações externas de alertas e não representa um ambiente produtivo de concessão de crédito.
 
 ## 3. Tecnologias
 
@@ -289,7 +289,7 @@ Estado consolidado do projeto após o merge `f632b53`, correspondente à conclus
 | 3 — Simulação e detecção de drift | Concluído |
 | 4 — Observabilidade e alertas | Concluído, incluindo correção P0 |
 | 5 — Governança, privacidade e fairness | Concluído e integrado à `main` |
-| 6 — Integração e demonstração | Em andamento |
+| 6 — Integração e demonstração | Evidências técnicas concluídas; entrega audiovisual pendente |
 
 O Bloco 5 foi integrado à `main` em três entregas:
 
@@ -1057,3 +1057,98 @@ Documentação complementar:
 - [Observabilidade e Alertas](docs/observability.md).
 
 A governança apresentada é uma avaliação acadêmica dos controles e riscos da arquitetura desenvolvida, sem constituir parecer jurídico ou declaração de conformidade regulatória integral.
+
+## 17. Integração e Entrega Final — Bloco 6
+
+O Bloco 6 concluiu a integração demonstrativa dos componentes
+desenvolvidos nos blocos anteriores, sem modificar o baseline,
+os contratos de qualidade ou a arquitetura operacional.
+
+### 17.1. Evidências de integração
+
+Foram executados cinco cenários end-to-end:
+
+| Cenário | Resultado |
+|---|---|
+| Scoring válido | Pandera aprovado; 5 registros pontuados; exit 0 |
+| Scoring inválido | Rejeição por `positive_credit`; 0 registros pontuados; exit 2 |
+| Drift controle | 0/16 features com drift |
+| Drift moderado | 0/16 features com drift |
+| Drift forte | 2/16 features com drift |
+
+No cenário forte, o Evidently sinalizou `AMT_CREDIT` e
+`AMT_INCOME_TOTAL`, utilizando Wasserstein distance
+(normed) com threshold estatístico de 0,1.
+
+Os três cenários de drift processaram 46.127 registros
+cada, com quality gate aprovado.
+
+### 17.2. Observabilidade integrada
+
+A demonstração confirmou o fluxo:
+
+`Pipeline → SQLite → Exporter → Prometheus → Grafana`
+
+Foram verificados:
+
+- Persistência dos cinco eventos operacionais no SQLite.
+- Exportação HTTP de métricas agregadas.
+- Target Prometheus `credit-risk-exporter` com estado `up`.
+- Três regras de alerta válidas e saudáveis.
+- Alerta `CreditRiskDriftDetected` observado em `firing`.
+- Dashboard Grafana com oito painéis.
+- Testes sintáticos e comportamentais das regras Prometheus.
+
+Os totais do dashboard incluem execuções históricas e não
+representam exclusivamente os cinco cenários do Bloco 6.
+
+### 17.3. Fairness, governança e limitações
+
+A avaliação offline de fairness utilizou 46.127 registros
+rotulados e o threshold fixo do baseline.
+
+Foram avaliadas dimensões de faixa etária, escolaridade
+e tipo de renda, com tamanho mínimo de 100 registros por
+grupo e denominador condicional mínimo de 20.
+
+Categorias pequenas foram combinadas e tiveram suas
+métricas omitidas no relatório agregado.
+
+Essas verificações não demonstram causalidade,
+ausência de vieses ou conformidade integral com a LGPD.
+
+A solução permanece acadêmica e não constitui um
+sistema produtivo de decisão de crédito.
+
+### 17.4. Documentação da entrega
+
+- [Evidências end-to-end](docs/end-to-end-evidence.md):
+  cenários, resultados e reprodução.
+- [Guia de entrega final](docs/final-delivery.md):
+  matriz FIAP, checklist e pendências.
+- [Arquitetura](docs/architecture.md):
+  componentes e decisões técnicas.
+- [Governança](docs/governance.md):
+  privacidade e responsabilidades.
+- [Fairness e causalidade](docs/fairness-causality.md):
+  auditoria descritiva e limites interpretativos.
+
+### 17.5. Formato da entrega acadêmica
+
+A entrega será realizada mediante dois links:
+
+1. Repositório GitHub:
+   https://github.com/Matsal-coder/credit-risk-monitoring
+2. Vídeo de apresentação STAR:
+   link a fornecer após gravação e publicação.
+
+O roteiro é material auxiliar de produção do vídeo
+e não integra os arquivos versionados do projeto.
+
+A integração técnica e documental está concluída.
+A produção do vídeo, a auditoria independente final e
+a submissão acadêmica permanecem atividades posteriores.
+
+A regressão pós-merge da documentação de evidências
+aprovou 378 testes automatizados, além de Ruff,
+`pip check` e `docker compose config --quiet`.
