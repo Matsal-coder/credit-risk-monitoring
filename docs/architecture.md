@@ -172,8 +172,7 @@ Os três alertas foram demonstrados nos estados `firing` e `inactive`.
 
 ### Bloco 5 — Governança, privacidade, fairness e causalidade
 
-**Estado: implementação e documentação integradas à `main`;
-consolidação documental final em andamento.**
+**Estado: concluído e integrado à `main`, incluindo a consolidação documental final.**
 
 Componentes entregues:
 
@@ -195,6 +194,7 @@ Entregas integradas:
 
 - Governança e privacidade: merge `9be0c6d`.
 - Fairness e causalidade: merge `47ef5e4`.
+- Consolidação documental e arquitetural: merge `f632b53`.
 
 Documentação detalhada:
 
@@ -207,7 +207,7 @@ constitui certificação de conformidade regulatória.
 
 ### Bloco 6 — Integração e demonstração
 
-**Estado: não iniciado.**
+**Estado: em andamento — integração demonstrativa, matriz de evidências e roteiro STAR.**
 
 O Bloco 6 permanece responsável pela demonstração integrada e
 pela preparação da entrega final.

@@ -50,7 +50,7 @@ A solução deverá contemplar:
 
 - Bloco 5 — documentação de governança, privacidade e LGPD; avaliação quantitativa agregada de fairness, testes automatizados e discussão de causalidade.
 
-### Etapa ainda planejada
+### Etapa de integração em andamento
 
 - Bloco 6 — integração demonstrativa, evidências finais e preparação da entrega.
 
@@ -103,22 +103,78 @@ dos dados, antes do treinamento do baseline.
 
 ## 5. Estrutura atual
 
+A estrutura abaixo representa os componentes versionados após a conclusão dos Blocos 0 a 5. A árvore foi consolidada a partir do inventário de arquivos Git, preservando a separação entre preparação, modelagem, qualidade, drift, observabilidade e governança.
+
 ```text
-TechChallenge - Fase 4/
+credit-risk-monitoring/
 ├── docs/
-│   └── architecture.md
+│   ├── decisions/
+│   │   └── ADR-001-threshold-selection.md
+│   ├── architecture.md
+│   ├── drift-monitoring.md
+│   ├── fairness-causality.md
+│   ├── governance.md
+│   ├── observability.md
+│   ├── quality-contracts.md
+│   └── reproducibility.md
+├── infra/
+│   ├── grafana/
+│   │   ├── dashboards/
+│   │   │   └── operations-overview.json
+│   │   └── provisioning/
+│   │       ├── dashboards/
+│   │       │   └── dashboards.yml
+│   │       └── datasources/
+│   │           └── prometheus.yml
+│   ├── prometheus/
+│   │   ├── alert_rules.test.yml
+│   │   ├── alert_rules.yml
+│   │   └── prometheus.yml
+│   └── Dockerfile.exporter
+├── scripts/
+│   ├── analyze_fairness.py
+│   ├── finalize_baseline.py
+│   ├── inspect_dataset.py
+│   ├── monitor_drift.py
+│   ├── prepare_dataset.py
+│   ├── score_batch.py
+│   ├── serve_metrics.py
+│   ├── train_baseline.py
+│   └── verify_dataset.py
 ├── src/
 │   └── credit_risk_monitoring/
+│       ├── data/
+│       ├── drift/
+│       ├── modeling/
+│       ├── observability/
+│       ├── quality/
 │       └── __init__.py
 ├── tests/
+│   ├── integration/
 │   └── unit/
-│       └── test_package.py
+├── .dockerignore
 ├── .gitignore
+├── compose.yaml
 ├── pyproject.toml
 └── README.md
 ```
 
-Esta estrutura corresponde ao estado versionado após a conclusão do Bloco 0. Os diretórios de dados e artefatos serão criados conforme as etapas do Bloco 1 forem implementadas.
+Os diretórios `src/credit_risk_monitoring/` e `tests/` estão resumidos por responsabilidade. Os módulos Python e testes completos podem ser consultados diretamente no repositório.
+
+**Arquivos e diretórios locais não versionados:**
+
+| Caminho | Finalidade |
+|---|---|
+| `data/raw/` | Dataset histórico original |
+| `data/processed/` | Partições e lotes utilizados nas execuções |
+| `artifacts/` | Modelo, relatórios JSON/HTML e resultados locais |
+| `artifacts/observability/events.sqlite3` | Persistência de eventos operacionais |
+| `.env` | Configuração local de credenciais |
+| `.venv/` | Ambiente Python isolado |
+
+Esses caminhos não fazem parte da árvore versionada. Alguns arquivos são gerados durante a execução dos scripts, e sua existência depende da preparação local do ambiente.
+
+Dados individuais, scores, credenciais, banco SQLite e modelo persistido não devem ser publicados no GitHub.
 
 ## 6. Configuração do ambiente
 
@@ -215,7 +271,7 @@ As branches de desenvolvimento não são enviadas ao repositório remoto.
 
 ## 10. Arquitetura
 
-As decisões arquiteturais e os contratos planejados estão documentados em docs/architecture.md, criado durante o Bloco 0 e atualizado conforme a evolução do projeto.
+As decisões arquiteturais, os contratos implementados e seus registros históricos estão documentados em [Arquitetura do Projeto](docs/architecture.md), criada durante o Bloco 0 e atualizada ao longo do desenvolvimento.
 
 O projeto utiliza uma abordagem incremental, evitando antecipar dependências e infraestrutura que ainda não possuem utilização prática.
 
@@ -223,7 +279,7 @@ O projeto utiliza uma abordagem incremental, evitando antecipar dependências e 
 
 ### Resumo consolidado
 
-Estado do projeto após o merge `47ef5e4`, correspondente à implementação de fairness e causalidade do Bloco 5:
+Estado consolidado do projeto após o merge `f632b53`, correspondente à conclusão documental do Bloco 5, e verificação inicial do Bloco 6 em 15/11/2026:
 
 | Bloco | Estado |
 |---|---|
@@ -232,16 +288,28 @@ Estado do projeto após o merge `47ef5e4`, correspondente à implementação de 
 | 2 — Contratos e inferência bloqueante | Concluído |
 | 3 — Simulação e detecção de drift | Concluído |
 | 4 — Observabilidade e alertas | Concluído, incluindo correção P0 |
-| 5 — Governança, privacidade e fairness | Implementação e documentação integradas; consolidação final em andamento |
-| 6 — Integração e demonstração | Não iniciado |
+| 5 — Governança, privacidade e fairness | Concluído e integrado à `main` |
+| 6 — Integração e demonstração | Em andamento |
 
-O Bloco 5 está organizado em três entregas:
+O Bloco 5 foi integrado à `main` em três entregas:
 
 1. Governança, privacidade e LGPD — merge `9be0c6d`.
 2. Fairness quantitativo e causalidade — merge `47ef5e4`.
-3. Consolidação documental e arquitetural — em andamento.
+3. Consolidação documental e arquitetural — merge `f632b53`.
 
-As duas primeiras entregas foram publicadas em `origin/main`. A regressão final do Bloco 5 aprovou 378 testes automatizados, com Ruff, pip check e Docker Compose validados.
+Na verificação inicial do Bloco 6, executada em 15/11/2026 sobre `f632b53`, foram aprovados **378 testes automatizados em 112,44 segundos**. Ruff lint e formatação foram aprovados, com 79 arquivos Python formatados; `pip check` não identificou conflitos; `docker compose config --quiet` e `git diff --check` não apresentaram erros.
+
+A solução mantém o baseline e os contratos funcionais congelados. O Bloco 6 concentra-se em integração demonstrativa, documentação de evidências e preparação do roteiro STAR, sem representar implantação em produção.
+
+Referências técnicas:
+
+- [Arquitetura](docs/architecture.md).
+- [Contratos de qualidade](docs/quality-contracts.md).
+- [Reprodutibilidade](docs/reproducibility.md).
+- [Monitoramento de drift](docs/drift-monitoring.md).
+- [Observabilidade](docs/observability.md).
+- [Governança e privacidade](docs/governance.md).
+- [Fairness, vieses e causalidade](docs/fairness-causality.md).
 
 O baseline utiliza LogisticRegression com 17 features,
 e o threshold oficial é `0.1406724340221902`.
@@ -317,7 +385,8 @@ A execução real gerou 184.506 registros de treino,
 de referência.
 
 O treinamento, a avaliação e a serialização do modelo
-ainda não foram implementados.
+foram implementados posteriormente na continuidade do Bloco 1,
+conforme detalhado na subseção Baseline de classificação.
 
 ### Baseline de classificação
 
@@ -457,7 +526,7 @@ A sentinela `365243` de `DAYS_EMPLOYED` é
 substituída por NaN e acompanhada de um indicador.
 
 A imputação estatística, o encoding e o scaling
-serão implementados no pipeline do modelo,
+foram implementados no pipeline do baseline,
 com ajuste restrito aos dados de treino.
 
 As partições são aleatórias e não representam
@@ -874,3 +943,117 @@ documental. O procedimento e as limitações constam de `docs/observability.md`.
 A solução não agenda automaticamente os lotes de scoring/drift; o Prometheus realiza coleta periódica de métricas, não execução contínua do modelo. Não há alertas automáticos com notificações configurados, reconstrução de histórico temporal de eventos no Prometheus, retreinamento automático, implantação em nuvem ou garantias de conformidade regulatória integral.
 
 Consulte [Observabilidade — Bloco 4](docs/observability.md) para os contratos, catálogo de métricas, procedimentos de validação, segurança e limitações detalhadas.
+
+## 16. Governança e Causalidade — Bloco 5
+
+O Bloco 5 consolida a avaliação de governança, privacidade, LGPD, possíveis vieses e limitações causais do Credit Risk Monitoring. O projeto utiliza dados históricos do Home Credit Default Risk, disponibilizados no Kaggle, exclusivamente para uma demonstração acadêmica. Não realiza concessão ou recusa real de crédito, não opera com solicitações reais de clientes e não constitui um sistema produtivo de decisão financeira.
+
+A avaliação combina documentação dos controles existentes com uma análise quantitativa offline de fairness na partição de teste, preservando o baseline e seus contratos.
+
+### 16.1. Inventário de dados e minimização
+
+O dataset original contém 307.511 registros e 122 colunas. Após a preparação, o baseline utiliza 17 features preditivas: 16 variáveis originais e um indicador derivado para o tratamento da sentinela `DAYS_EMPLOYED=365243`.
+
+As informações incluem atributos financeiros, cadastrais e familiares, como renda, valor de crédito, idade aproximada, escolaridade e tipo de renda. O identificador `SK_ID_CURR` permanece nos arquivos de dados para verificações estruturais, mas não é utilizado como variável preditiva.
+
+**Controles implementados:**
+
+- Dados brutos, partições processadas, modelo e artefatos locais excluídos do versionamento Git.
+- Separação de `SK_ID_CURR` e `TARGET` das features enviadas ao modelo.
+- Validação bloqueante de qualidade antes da inferência.
+- Relatórios operacionais predominantemente agregados, com scores individuais exportados apenas quando explicitamente solicitados.
+- Eventos SQLite e métricas Prometheus sem identificadores individuais de clientes nos labels.
+- Interface de observabilidade restrita ao ambiente local, com controles de isolamento do exporter.
+
+**Limitações:** a exclusão do Git não equivale a anonimização, criptografia ou controle de acesso aos arquivos locais. O dataset publicamente disponibilizado também não deve ser considerado automaticamente anônimo ou livre de restrições de tratamento.
+
+### 16.2. LGPD, bases legais e decisões automatizadas
+
+A documentação considera os princípios da Lei nº 13.709/2018, especialmente finalidade, adequação, necessidade, transparência, segurança, prevenção e não discriminação.
+
+Para uma fintech hipotética, possíveis hipóteses legais a avaliar incluiriam proteção do crédito (art. 7º, X), execução de contrato ou procedimentos preliminares (art. 7º, V), cumprimento de obrigação legal ou regulatória (art. 7º, II) e legítimo interesse (art. 7º, IX), conforme a finalidade e as condições concretas do tratamento.
+
+A definição da base legal dependeria de uma avaliação jurídica específica. O caráter acadêmico do projeto ou a disponibilidade pública dos dados não determinam automaticamente a hipótese aplicável.
+
+O artigo 20 da LGPD prevê o direito de solicitar revisão de decisões tomadas unicamente com base em tratamento automatizado de dados pessoais que afetem interesses do titular, incluindo determinadas decisões relacionadas a perfil de crédito.
+
+O baseline deste projeto gera classificações experimentais de inadimplência. Seu threshold não representa uma política real de aprovação ou rejeição de crédito, e não existe um processo implementado de atendimento a solicitações de titulares.
+
+**Status:** princípios, hipóteses jurídicas e responsabilidades documentados; conformidade jurídica integral não certificada.
+
+### 16.3. Retenção e descarte de dados
+
+A governança distingue explicitamente a retenção técnica atualmente configurada das políticas propostas para uma eventual operação controlada.
+
+| Categoria | Situação atual | Política acadêmica proposta |
+|---|---|---|
+| Dados brutos e partições | Armazenamento local, sem expurgo automático | Até 30 dias após encerramento e aceite |
+| Lotes simulados e scores individuais | Arquivos locais, sem expurgo automático | Até 30 dias após execução |
+| Relatórios JSON/HTML | Arquivos locais, sem expurgo automático | Até 90 dias após execução |
+| Eventos SQLite | Persistência local, sem TTL automático | Até 90 dias após execução |
+| Séries Prometheus | Retenção configurada de 7 dias | Manter o prazo configurado |
+| Grafana | Volume persistente | Remoção controlada após encerramento e aceite |
+| Modelo e metadados | Artefatos locais | Até 90 dias após encerramento e aceite |
+
+Os prazos de 30 e 90 dias são propostas internas do exercício, não exigências legais universais. Não foi implementado expurgo automático, e a retenção do Prometheus não elimina registros persistidos no SQLite, relatórios ou datasets.
+
+### 16.4. Fairness e avaliação quantitativa de vieses
+
+A avaliação de fairness é executada offline por `scripts/analyze_fairness.py`, utilizando os 46.127 registros rotulados da partição de teste e o baseline persistido.
+
+O threshold permanece fixado em `0.1406724340221902`, sem retreinamento ou ajustes por grupo. A análise reproduziu a matriz de confusão oficial:
+
+| Métrica | Registros |
+|---|---:|
+| Verdadeiros negativos (TN) | 37.262 |
+| Falsos positivos (FP) | 5.141 |
+| Falsos negativos (FN) | 2.242 |
+| Verdadeiros positivos (TP) | 1.482 |
+
+Foram avaliadas três dimensões: faixas etárias, escolaridade e tipo de renda. Para cada grupo elegível, a análise considera prevalência histórica, taxa de classificação positiva, precision, recall/TPR, FPR e matriz de confusão.
+
+**Exemplos de disparidades descritivas observadas:**
+
+- **Faixa etária:** taxa de classificação positiva de 30,09% para menores de 30 anos, contra 3,90% para pessoas de 60 anos ou mais.
+- **Escolaridade:** 24,01% em `Lower secondary`, contra 5,75% em `Higher education`.
+- **Tipo de renda:** 19,50% em `Working`, contra 4,31% em `Pensioner`.
+
+A classe positiva corresponde à previsão de inadimplência (`TARGET=1`), não à aprovação de crédito.
+
+Essas diferenças são descritivas e coexistem com diferenças de prevalência, composição e tamanho amostral entre os grupos. Não comprovam, isoladamente, discriminação, injustiça algorítmica ou efeitos causais.
+
+Para reduzir a divulgação de informações, o relatório JSON agrega grupos com menos de 100 observações em `SUPPRESSED_GROUPS`, sem identificar individualmente suas categorias. Métricas condicionais com denominadores inferiores a 20 são registradas como `null`. Essas medidas não constituem garantia formal de anonimização.
+
+O arquivo `artifacts/fairness_test_aggregated.json` permanece local e não versionado.
+
+### 16.5. Data drift, concept drift e causalidade
+
+O projeto distingue três fenômenos:
+
+- **Data drift:** alteração estatística na distribuição das variáveis de entrada, monitorada pelo Evidently.
+- **Concept drift:** alteração na relação entre as variáveis preditoras e o resultado real, que exigiria evidências adicionais, incluindo novos rótulos observados.
+- **Causalidade:** identificação do efeito de uma intervenção sobre um resultado, dependente de hipóteses e métodos específicos de inferência causal.
+
+Na simulação forte do Bloco 3, o Evidently detectou drift em `AMT_CREDIT` e `AMT_INCOME_TOTAL`, totalizando 2 das 16 features monitoradas. A taxa de classificações positivas também variou entre os cenários simulados.
+
+Essas evidências demonstram mudanças nas distribuições de entrada e na resposta preditiva do modelo congelado. Não demonstram aumento real da inadimplência, degradação comprovada em produção, concept drift ou efeito causal das variáveis modificadas.
+
+Da mesma forma, as disparidades observadas entre grupos na avaliação de fairness são associações descritivas. Sua interpretação requer considerar fatores de confusão, proxies, composição populacional e limitações dos rótulos históricos.
+
+### 16.6. Controles, limites e documentação complementar
+
+**Implementado e verificado:** contratos de qualidade, inferência bloqueante, monitoramento estatístico por lotes, eventos operacionais, métricas agregadas, alertas Prometheus e diagnóstico offline de fairness.
+
+**Documentado ou proposto:** hipóteses jurídicas, políticas de retenção e descarte, procedimentos de atendimento aos titulares, controles organizacionais e medidas futuras de mitigação de vieses.
+
+**Não implementado ou não comprovado:** anonimização formal, expurgo automatizado, auditoria jurídica, certificação LGPD, avaliação temporal de fairness, mitigação automática de vieses, inferência causal e validação de desempenho em produção real.
+
+Documentação complementar:
+
+- [Governança de Dados, Privacidade e LGPD](docs/governance.md).
+- [Fairness, Vieses e Causalidade](docs/fairness-causality.md).
+- [Arquitetura do Projeto](docs/architecture.md).
+- [Monitoramento de Drift](docs/drift-monitoring.md).
+- [Observabilidade e Alertas](docs/observability.md).
+
+A governança apresentada é uma avaliação acadêmica dos controles e riscos da arquitetura desenvolvida, sem constituir parecer jurídico ou declaração de conformidade regulatória integral.
