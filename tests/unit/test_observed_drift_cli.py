@@ -231,3 +231,352 @@ def test_database_cannot_overlap_input(cli, paths):
         cli.run_observed_cli(args)
 
     assert paths["reference"].read_text(encoding="utf-8") == "placeholder"
+
+
+def test_terminal_failure_after_drift_publication(
+    cli,
+    paths,
+    monkeypatch,
+    capsys,
+):
+    """Falha terminal compensa JSON/HTML e nao anuncia sucesso."""
+    mock_pipeline(
+        cli,
+        monkeypatch,
+        make_result(drifted=True),
+    )
+
+    def save_json(_result, path):
+        with path.open("x", encoding="utf-8") as output:
+            output.write('{"drift": true}')
+        return path
+
+    def save_html(_result, path):
+        with path.open("x", encoding="utf-8") as output:
+            output.write("<html>drift report</html>")
+        return path
+
+    monkeypatch.setattr(cli, "save_monitoring_json", save_json)
+    monkeypatch.setattr(cli, "save_monitoring_html", save_html)
+
+    original_store = cli.SQLiteEventStore
+
+    class FailingTerminalStore(original_store):
+        def finish(self, event):
+            raise OSError("simulated terminal SQLite failure")
+
+    monkeypatch.setattr(
+        cli,
+        "SQLiteEventStore",
+        FailingTerminalStore,
+    )
+
+    args = arguments(cli, paths)
+
+    with pytest.raises(OSError):
+        cli.run_observed_cli(args)
+
+    captured = capsys.readouterr()
+
+    assert captured.out == ""
+    assert not paths["json"].exists()
+    assert not paths["html"].exists()
+
+    persisted = original_store(paths["database"]).list_events()
+
+    assert len(persisted) == 1
+    assert persisted[0].execution_status == "running"
+
+
+def test_terminal_failure_with_unavailable_sqlite_preserves_drift_reports(
+    cli,
+    paths,
+    monkeypatch,
+    capsys,
+):
+    """Falha de escrita e leitura preserva relatorios de drift."""
+    mock_pipeline(cli, monkeypatch, make_result(drifted=True))
+
+    def save_json(_result, path):
+        with path.open("x", encoding="utf-8") as output:
+            output.write('{"drift": true}')
+        return path
+
+    def save_html(_result, path):
+        with path.open("x", encoding="utf-8") as output:
+            output.write("<html>drift report</html>")
+        return path
+
+    monkeypatch.setattr(cli, "save_monitoring_json", save_json)
+    monkeypatch.setattr(cli, "save_monitoring_html", save_html)
+
+    original_store = cli.SQLiteEventStore
+
+    class UnavailableTerminalStore(original_store):
+        def finish(self, event):
+            raise OSError("simulated SQLite write failure")
+
+        def get(self, execution_id):
+            raise OSError("simulated SQLite read failure")
+
+    monkeypatch.setattr(
+        cli,
+        "SQLiteEventStore",
+        UnavailableTerminalStore,
+    )
+
+    with pytest.raises(OSError):
+        cli.run_observed_cli(arguments(cli, paths))
+
+    captured = capsys.readouterr()
+
+    assert captured.out == ""
+    assert paths["json"].is_file()
+    assert paths["html"].is_file()
+
+    persisted = original_store(paths["database"]).list_events()
+
+    assert len(persisted) == 1
+    assert persisted[0].execution_status == "running"
+
+
+def test_drift_finish_error_after_commit_preserves_reports(
+    cli,
+    paths,
+    monkeypatch,
+    capsys,
+):
+    """Excecao apos commit nao compensa relatorios publicados."""
+    mock_pipeline(cli, monkeypatch, make_result(drifted=True))
+
+    def save_json(_result, path):
+        with path.open("x", encoding="utf-8") as output:
+            output.write('{"drift": true}')
+        return path
+
+    def save_html(_result, path):
+        with path.open("x", encoding="utf-8") as output:
+            output.write("<html>drift report</html>")
+        return path
+
+    monkeypatch.setattr(cli, "save_monitoring_json", save_json)
+    monkeypatch.setattr(cli, "save_monitoring_html", save_html)
+
+    original_store = cli.SQLiteEventStore
+
+    class PostCommitFailureStore(original_store):
+        def finish(self, event):
+            super().finish(event)
+            raise OSError("simulated failure after commit")
+
+    monkeypatch.setattr(
+        cli,
+        "SQLiteEventStore",
+        PostCommitFailureStore,
+    )
+
+    with pytest.raises(
+        OSError,
+        match="simulated failure after commit",
+    ):
+        cli.run_observed_cli(arguments(cli, paths))
+
+    captured = capsys.readouterr()
+
+    assert captured.out == ""
+    assert paths["json"].is_file()
+    assert paths["html"].is_file()
+
+    event = original_store(paths["database"]).list_events()[0]
+
+    assert event.execution_status == "completed"
+    assert event.exit_code == 0
+
+
+def test_drift_main_sanitizes_terminal_failure(
+    cli,
+    paths,
+    monkeypatch,
+    capsys,
+):
+    """Falha terminal retorna Exit 1 sem divulgar paths."""
+    mock_pipeline(cli, monkeypatch, make_result(drifted=True))
+
+    def save_json(_result, path):
+        with path.open("x", encoding="utf-8") as output:
+            output.write("{}")
+        return path
+
+    def save_html(_result, path):
+        with path.open("x", encoding="utf-8") as output:
+            output.write("<html></html>")
+        return path
+
+    monkeypatch.setattr(cli, "save_monitoring_json", save_json)
+    monkeypatch.setattr(cli, "save_monitoring_html", save_html)
+
+    original_store = cli.SQLiteEventStore
+
+    class FailingStore(original_store):
+        def finish(self, event):
+            raise OSError("private-path /sensitive/customer.csv")
+
+    monkeypatch.setattr(
+        cli,
+        "SQLiteEventStore",
+        FailingStore,
+    )
+
+    args = arguments(cli, paths)
+
+    command = [
+        "--reference",
+        str(args.reference),
+        "--model",
+        str(args.model),
+        "--batch-id",
+        args.batch_id,
+        "--json-output",
+        str(args.json_output),
+        "--html-output",
+        str(args.html_output),
+        "--events-db",
+        str(args.events_db),
+        "monitor",
+        "--production-raw",
+        str(args.production_raw),
+    ]
+
+    exit_code = cli.main(command)
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert captured.out == ""
+    assert "OPERATIONAL_ERROR: OSError" in captured.err
+    assert "/sensitive/" not in captured.err
+
+    assert not paths["json"].exists()
+    assert not paths["html"].exists()
+
+    event = original_store(paths["database"]).list_events()[0]
+    assert event.execution_status == "running"
+
+
+def test_terminal_failure_preserves_replaced_drift_report(
+    cli,
+    paths,
+    monkeypatch,
+    capsys,
+):
+    """Nao exclui relatorio substituido antes da compensacao."""
+    from credit_risk_monitoring.observability.publication import (
+        PublicationRollbackError,
+    )
+
+    mock_pipeline(cli, monkeypatch, make_result(drifted=True))
+
+    def save_json(_result, path):
+        with path.open("x", encoding="utf-8") as output:
+            output.write('{"drift": true}')
+        return path
+
+    def save_html(_result, path):
+        with path.open("x", encoding="utf-8") as output:
+            output.write("<html>drift report</html>")
+        return path
+
+    monkeypatch.setattr(cli, "save_monitoring_json", save_json)
+    monkeypatch.setattr(cli, "save_monitoring_html", save_html)
+
+    original_store = cli.SQLiteEventStore
+
+    class ReplacingTerminalStore(original_store):
+        def finish(self, event):
+            replacement = paths["json"].parent / "replacement.json"
+            replacement.write_text(
+                "replacement-content",
+                encoding="utf-8",
+            )
+            replacement.replace(paths["json"])
+            raise OSError("simulated terminal failure")
+
+    monkeypatch.setattr(
+        cli,
+        "SQLiteEventStore",
+        ReplacingTerminalStore,
+    )
+
+    with pytest.raises(
+        PublicationRollbackError,
+        match="Identidade de artefato alterada",
+    ):
+        cli.run_observed_cli(arguments(cli, paths))
+
+    captured = capsys.readouterr()
+
+    assert captured.out == ""
+    assert paths["json"].read_text(encoding="utf-8") == "replacement-content"
+    assert paths["html"].is_file()
+
+    event = original_store(paths["database"]).list_events()[0]
+
+    assert event.execution_status == "running"
+
+
+def test_drift_registration_failure_preserves_untracked_html(
+    cli,
+    paths,
+    monkeypatch,
+    capsys,
+):
+    """Falha de registro preserva HTML sem identidade confirmada."""
+    from credit_risk_monitoring.observability.publication import (
+        PublicationRollbackError,
+    )
+
+    mock_pipeline(cli, monkeypatch, make_result(drifted=True))
+
+    def save_json(_result, path):
+        with path.open("x", encoding="utf-8") as output:
+            output.write("{}")
+        return path
+
+    def save_html(_result, path):
+        with path.open("x", encoding="utf-8") as output:
+            output.write("<html></html>")
+        return path
+
+    monkeypatch.setattr(cli, "save_monitoring_json", save_json)
+    monkeypatch.setattr(cli, "save_monitoring_html", save_html)
+
+    original_register = cli.PublicationTracker.register
+
+    def fail_register(self, path):
+        if path == paths["html"]:
+            raise OSError("simulated identity capture failure")
+
+        return original_register(self, path)
+
+    monkeypatch.setattr(
+        cli.PublicationTracker,
+        "register",
+        fail_register,
+    )
+
+    with pytest.raises(
+        PublicationRollbackError,
+        match="artefatos sem identidade confirmada",
+    ):
+        cli.run_observed_cli(arguments(cli, paths))
+
+    captured = capsys.readouterr()
+
+    assert captured.out == ""
+    assert not paths["json"].exists()
+    assert paths["html"].is_file()
+
+    event = SQLiteEventStore(paths["database"]).list_events()[0]
+
+    assert event.execution_status == "failed"
+    assert event.exit_code == 1

@@ -250,3 +250,60 @@ def test_execution_survives_store_reopening(store):
     reopened = SQLiteEventStore(store.path)
 
     assert reopened.get(initial.execution_id) == event
+
+
+def test_failed_publication_rollback_propagates_error(
+    store,
+    monkeypatch,
+    tmp_path,
+):
+    """Falha na compensacao nao pode ser silenciada."""
+    from credit_risk_monitoring.observability.publication import (
+        PublicationRollbackError,
+        PublicationTracker,
+    )
+
+    initial = start_event(
+        "rollback-failure",
+        "scoring",
+        "not_applicable",
+    )
+
+    report = tmp_path / "report.json"
+    tracker = PublicationTracker()
+
+    def postprocess(_result):
+        report.write_text("temporary", encoding="utf-8")
+        tracker.register(report)
+
+    def failing_finish(_event):
+        raise OSError("SQLite terminal failure")
+
+    def failing_rollback():
+        raise PublicationRollbackError("Simulated rollback failure")
+
+    monkeypatch.setattr(store, "finish", failing_finish)
+    monkeypatch.setattr(
+        tracker,
+        "rollback",
+        failing_rollback,
+    )
+
+    with pytest.raises(
+        PublicationRollbackError,
+        match="Simulated rollback failure",
+    ):
+        execute_observed(
+            store=store,
+            initial=initial,
+            operation=lambda: make_inference(batch_id="rollback-failure"),
+            build_event=build_scoring_event,
+            postprocess=postprocess,
+            rollback_publication=tracker.rollback,
+        )
+
+    assert report.is_file()
+
+    event = store.get(initial.execution_id)
+
+    assert event.execution_status == "running"

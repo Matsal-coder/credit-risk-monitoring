@@ -15,6 +15,10 @@ from credit_risk_monitoring.modeling.inference import (
 from credit_risk_monitoring.observability.adapters import build_scoring_event
 from credit_risk_monitoring.observability.events import start_event
 from credit_risk_monitoring.observability.execution import execute_observed
+from credit_risk_monitoring.observability.publication import (
+    PublicationRollbackError,
+    PublicationTracker,
+)
 from credit_risk_monitoring.observability.store import SQLiteEventStore
 
 
@@ -90,8 +94,9 @@ def _write_outputs(
     result: InferenceResult,
     report_path: Path,
     scores_path: Path | None,
+    publication_tracker: PublicationTracker | None = None,
 ) -> None:
-    """Persiste resultados sem deixar arquivos parciais em falhas."""
+    """Persiste resultados com rastreamento opcional da publicacao."""
     created_paths: list[Path] = []
 
     try:
@@ -117,6 +122,9 @@ def _write_outputs(
                 created_paths.append(scores_path)
                 scores.to_csv(file, index=False)
 
+            if publication_tracker is not None:
+                publication_tracker.register(scores_path)
+
         report_path.parent.mkdir(
             parents=True,
             exist_ok=True,
@@ -132,9 +140,27 @@ def _write_outputs(
                 allow_nan=False,
             )
 
-    except Exception:
-        for path in reversed(created_paths):
-            path.unlink(missing_ok=True)
+        if publication_tracker is not None:
+            publication_tracker.register(report_path)
+
+    except Exception as exc:
+        if publication_tracker is None:
+            # Mantem a limpeza historica sem observabilidade.
+            for path in reversed(created_paths):
+                path.unlink(missing_ok=True)
+        else:
+            registered = {artifact.path for artifact in publication_tracker.artifacts}
+
+            untracked = [path for path in created_paths if path not in registered]
+
+            # Nao apaga registros se a compensacao falhar.
+            publication_tracker.rollback()
+
+            if untracked:
+                raise PublicationRollbackError(
+                    "Publicacao falhou com artefatos sem identidade confirmada."
+                ) from exc
+
         raise
 
 
@@ -211,7 +237,7 @@ def _validate_events_db_path(args: argparse.Namespace) -> None:
 
 
 def run_observed_cli(args: argparse.Namespace) -> int:
-    """Executa scoring com eventos operacionais persistidos."""
+    """Executa scoring com publicacao e confirmacao terminal."""
     _validate_events_db_path(args)
 
     store = SQLiteEventStore(args.events_db)
@@ -222,11 +248,14 @@ def run_observed_cli(args: argparse.Namespace) -> int:
         scenario_id="not_applicable",
     )
 
+    publication_tracker = PublicationTracker()
+
     def postprocess(result: InferenceResult) -> None:
         _write_outputs(
             result,
             report_path=args.report_output,
             scores_path=args.scores_output,
+            publication_tracker=publication_tracker,
         )
 
     result, event = execute_observed(
@@ -235,10 +264,12 @@ def run_observed_cli(args: argparse.Namespace) -> int:
         operation=lambda: _run_scoring(args),
         build_event=build_scoring_event,
         postprocess=postprocess,
+        rollback_publication=publication_tracker.rollback,
     )
 
-    # Informar aprovacao somente apos persistencia terminal.
+    # Anunciar conclusao somente apos persistencia terminal.
     _print_result(args, result)
+
     return event.exit_code
 
 

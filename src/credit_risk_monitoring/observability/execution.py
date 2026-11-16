@@ -23,21 +23,21 @@ def execute_observed(
     operation: Callable[[], ResultT],
     build_event: Callable[..., OperationalEvent],
     postprocess: Callable[[ResultT], None] | None = None,
+    rollback_publication: Callable[[], None] | None = None,
 ) -> tuple[ResultT, OperationalEvent]:
-    """Executa uma tentativa com registro inicial e terminal.
+    """Executa tentativa observavel com compensacao controlada.
 
-    O evento inicial deve ser criado previamente com start_event.
+    A publicacao acontece antes da persistencia terminal.
 
-    A operacao fornece o resultado do pipeline. O pos-processamento
-    opcional faz parte do sucesso operacional da tentativa.
+    Em caso de falha terminal, a compensacao somente sera
+    acionada quando a leitura confirmar que o evento
+    permanece no estado running.
 
-    Excecoes da operacao sao registradas e propagadas.
-    Falhas de persistencia tambem sao propagadas.
+    Nao ha atomicidade entre SQLite e filesystem.
     """
     if initial.execution_status != "running":
         raise ValueError("Execucao observavel exige evento running.")
 
-    # Nao executar o pipeline se o inicio nao puder ser persistido.
     store.start(initial)
 
     started_clock = time.perf_counter()
@@ -54,11 +54,10 @@ def execute_observed(
             initial,
             result,
             finished_at=datetime.now(timezone.utc),
-            duration_seconds=time.perf_counter() - started_clock,
+            duration_seconds=(time.perf_counter() - started_clock),
         )
 
     except Exception as exc:
-        # Preservar somente resultados parciais de tipos conhecidos.
         safe_partial = (
             partial_result
             if isinstance(
@@ -72,18 +71,33 @@ def execute_observed(
             initial,
             exc,
             finished_at=datetime.now(timezone.utc),
-            duration_seconds=time.perf_counter() - started_clock,
+            duration_seconds=(time.perf_counter() - started_clock),
             partial_result=safe_partial,
         )
 
-        # Se a persistencia falhar, a excecao de armazenamento
-        # sera propagada. Nao afirmar que a falha foi registrada.
         store.finish(failure)
         raise
 
-    # A persistencia terminal fica fora do try acima.
-    # Isso evita tentar finalizar duas vezes quando o proprio
-    # armazenamento do evento de sucesso falhar.
-    store.finish(event)
+    try:
+        store.finish(event)
+
+    except Exception:
+        # Uma excecao nao comprova que o COMMIT falhou.
+        # Consultar o estado antes de compensar arquivos.
+        try:
+            persisted = store.get(initial.execution_id)
+        except Exception:
+            # Estado indeterminado: preservar os arquivos
+            # para reconciliacao posterior.
+            raise
+
+        if (
+            persisted is not None
+            and persisted.execution_status == "running"
+            and rollback_publication is not None
+        ):
+            rollback_publication()
+
+        raise
 
     return result, event
