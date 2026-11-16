@@ -207,13 +207,42 @@ constitui certificação de conformidade regulatória.
 
 ### Bloco 6 — Integração e demonstração
 
-**Estado: em andamento — integração demonstrativa, matriz de evidências e roteiro STAR.**
+**Estado: integração técnica e documentação concluídas; vídeo STAR e submissão acadêmica pendentes.**
 
-O Bloco 6 permanece responsável pela demonstração integrada e
-pela preparação da entrega final.
+O Bloco 6 consolidou a demonstração integrada dos contratos
+Pandera, da inferência bloqueante, da detecção de drift com
+Evidently e da observabilidade com SQLite, exporter HTTP,
+Prometheus e Grafana.
 
-A arquitetura atual não implementa agendamento automático
+Foram reproduzidos cinco cenários operacionais:
+
+- Scoring válido: 5 registros pontuados, exit code 0.
+- Scoring inválido: rejeição Pandera, 0 registros pontuados,
+  exit code 2.
+- Drift controle: 0/16 features sinalizadas.
+- Drift moderado: 0/16 features sinalizadas.
+- Drift forte: 2/16 features sinalizadas.
+
+No cenário forte, as features `AMT_CREDIT` e
+`AMT_INCOME_TOTAL` apresentaram drift estatístico.
+A regra Prometheus `CreditRiskDriftDetected` foi observada
+em estado `firing`, e o Grafana apresentou oito painéis.
+
+Os resultados, comandos e limites estão consolidados em
+[Evidências end-to-end](end-to-end-evidence.md).
+
+O checklist de submissão acadêmica está em
+[Entrega final](final-delivery.md).
+
+A entrega acadêmica prevista consiste no link do
+repositório GitHub e no link do vídeo STAR publicado.
+A produção do vídeo e a submissão ainda não foram
+confirmadas.
+
+A arquitetura não implementa agendamento automático
 de scoring/drift nem notificações externas de alertas.
+A demonstração utiliza dados históricos e cenários
+simulados, sem constituir operação real de crédito.
 
 ## 4. Decisões técnicas aprovadas
 
