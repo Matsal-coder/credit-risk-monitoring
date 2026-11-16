@@ -149,7 +149,7 @@ documentados em `docs/drift-monitoring.md`.
 
 ### Bloco 4 — Instrumentação e observabilidade
 
-**Estado: infraestrutura funcional integrada à `main`; correção P0 de alertas validada na branch `fix/observability-alert-rules`, aguardando integração.**
+**Estado: concluído e integrado à `main`, incluindo a correção P0 das regras de alerta Prometheus.**
 
 Componentes implementados:
 
@@ -165,13 +165,55 @@ O merge funcional da infraestrutura foi registrado em `fc48d95`.
 A regressão após esse merge aprovou **349 testes**. O protocolo,
 as evidências e as limitações estão em `docs/observability.md`.
 
-### Blocos ainda não implementados
+A correção P0 das regras de alerta foi posteriormente integrada à `main`,
+com merge `b453d3f`. A regressão consolidada do Bloco 4 aprovou
+**364 testes automatizados**, incluindo os novos testes de alertas.
+Os três alertas foram demonstrados nos estados `firing` e `inactive`.
 
-- Bloco 5: governança e privacidade consolidadas.
-- Bloco 6: integração final e demonstração.
+### Bloco 5 — Governança, privacidade, fairness e causalidade
 
-Os Blocos 5 e 6 permanecem planejados. O Bloco 4 não implementa
-agendamento automático de scoring/drift nem alertas com notificações.
+**Estado: implementação e documentação integradas à `main`;
+consolidação documental final em andamento.**
+
+Componentes entregues:
+
+- Inventário e classificação das categorias de dados.
+- Documentação de finalidade, privacidade, LGPD e responsabilidades.
+- Avaliação de riscos, controles existentes e medidas recomendadas.
+- Análise quantitativa agregada de fairness na partição de teste.
+- Avaliação por idade, escolaridade e tipo de renda.
+- Supressão consolidada de categorias com menos de 100 registros.
+- Tratamento explícito de métricas com denominadores insuficientes.
+- Discussão metodológica de vieses, associações e causalidade.
+- Quatorze testes unitários específicos de fairness.
+
+O baseline foi preservado: 46.127 observações, threshold
+`0.1406724340221902` e matriz de confusão oficial reproduzida
+exatamente pela análise quantitativa.
+
+Entregas integradas:
+
+- Governança e privacidade: merge `9be0c6d`.
+- Fairness e causalidade: merge `47ef5e4`.
+
+Documentação detalhada:
+
+- [Governança e privacidade](governance.md).
+- [Fairness e causalidade](fairness-causality.md).
+
+A análise identifica disparidades descritivas, sem demonstrar
+discriminação ou relações causais. A documentação de LGPD não
+constitui certificação de conformidade regulatória.
+
+### Bloco 6 — Integração e demonstração
+
+**Estado: não iniciado.**
+
+O Bloco 6 permanece responsável pela demonstração integrada e
+pela preparação da entrega final.
+
+A arquitetura atual não implementa agendamento automático
+de scoring/drift nem notificações externas de alertas.
 
 ## 4. Decisões técnicas aprovadas
 
@@ -188,10 +230,18 @@ agendamento automático de scoring/drift nem alertas com notificações.
 | Infraestrutura | Docker Compose | Orquestração local dos serviços implementados |
 | Testes | pytest | Verificações automatizadas |
 | Lint e formatação | Ruff | Padronização e análise estática |
-| Governança | Documentação transversal | Privacidade e responsabilidade sobre os dados |
+| Governança e LGPD | Documentação transversal em `docs/governance.md` | Registrar inventário de dados, controles existentes, riscos e medidas propostas |
+| Fairness | Script Python offline com pandas, NumPy e scikit-learn | Reutilizar baseline persistido e produzir métricas agregadas sem retreinamento |
+| Causalidade | Análise metodológica documentada | Evitar interpretar diferenças preditivas ou cenários sintéticos de drift como efeitos causais demonstrados |
 
-As tecnologias de observabilidade listadas foram executadas e verificadas localmente no Bloco 4.
-Os controles de governança e integração futura não devem ser confundidos com funcionalidades já implementadas.
+As tecnologias de observabilidade foram executadas e verificadas
+localmente no Bloco 4. A análise quantitativa de fairness foi executada
+no Bloco 5 sobre a partição histórica de teste, com reprodução do baseline.
+
+Os controles de governança devem distinguir mecanismos implementados,
+recomendações documentais e requisitos adicionais para eventual uso
+produtivo. Não há demonstração de conformidade integral com a LGPD,
+ausência de vieses ou identificação causal.
 
 ## 5. Arquitetura lógica e evolução
 
@@ -1485,3 +1535,242 @@ degradação preditiva em produção.
 O Bloco 5 deverá aprofundar governança, privacidade, retenção,
 vieses e responsabilidades; o Bloco 6 deverá consolidar a
 demonstração integrada e as evidências finais.
+
+## 18. Arquitetura implementada — Bloco 5
+
+### 18.1. Objetivo e fronteiras
+
+O Bloco 5 acrescenta documentação de governança, privacidade e LGPD, juntamente com uma avaliação quantitativa offline de disparidades preditivas do baseline de crédito.
+
+A implementação preserva:
+
+- Dataset original e partições determinísticas.
+- Baseline LogisticRegression persistido.
+- As 17 features oficiais.
+- Threshold `0.1406724340221902`.
+- Contratos Pandera e inferência bloqueante.
+- Monitoramento de drift com Evidently.
+- Observabilidade operacional e alertas Prometheus.
+
+O Bloco 5 não modifica as decisões de classificação do baseline, não retreina modelos e não altera a infraestrutura operacional.
+
+A avaliação de fairness é diagnóstica e retrospectiva. Não integra automaticamente o fluxo das CLIs de scoring e monitoramento.
+
+### 18.2. Fluxo da análise quantitativa
+
+```text
+data/processed/test.csv
+          |
+          v
+Validação estrutural do conjunto rotulado
+          |
+          +-------------------------------+
+          |                               |
+          v                               v
+Features oficiais                TARGET histórico
+          |
+          v
+Carregamento do baseline persistido
+          |
+          v
+predict_proba()
+          |
+          v
+Threshold oficial congelado
+          |
+          v
+Previsões binárias
+          |
+          +-------------------------------+
+                                          |
+                                          v
+                      Métricas globais e por grupo
+                                          |
+                                          v
+                         Supressão de grupos raros
+                                          |
+                                          v
+                       Relatório JSON agregado local
+```
+
+O processamento ocorre em memória, utilizando o dataset histórico de teste.
+
+A etapa de validação utiliza `validate_model_data()`. O modelo e seu threshold são carregados pela função `load_baseline_model()`, que verifica a estrutura do artefato e a compatibilidade dos metadados.
+
+O script utiliza diretamente `predict_proba()` do pipeline persistido. Não executa `fit()` nem seleciona novamente o threshold.
+
+### 18.3. Componentes e responsabilidades
+
+| Arquivo | Responsabilidade |
+|---|---|
+| `docs/governance.md` | Inventário de dados, finalidades, privacidade, LGPD, riscos e medidas de governança |
+| `scripts/analyze_fairness.py` | Avaliação offline e exportação de métricas agregadas |
+| `tests/unit/test_fairness_analysis.py` | Testes de métricas, grupos, validações e minimização de dados |
+| `docs/fairness-causality.md` | Metodologia, resultados, limitações, vieses e interpretação causal |
+| `artifacts/fairness_test_aggregated.json` | Resultado agregado gerado localmente, não versionado |
+
+A avaliação utiliza componentes já existentes em:
+
+- `credit_risk_monitoring.data.preparation`
+- `credit_risk_monitoring.modeling.inference`
+- `credit_risk_monitoring.modeling.training`
+
+Não foi criado um serviço HTTP de fairness, um novo modelo preditivo ou um processo de execução contínua.
+
+### 18.4. Contrato de entrada
+
+A análise utiliza a partição `data/processed/test.csv`, que contém:
+
+- `SK_ID_CURR`, utilizado para validação estrutural, mas não exportado.
+- `TARGET`, utilizado exclusivamente como rótulo histórico de avaliação.
+- As 17 features preditivas definidas em `MODEL_FEATURES`.
+
+O baseline é carregado de `artifacts/baseline_model.joblib`.
+
+A análise utiliza exclusivamente o threshold persistido no artefato. O conjunto de teste não é empregado para selecionar parâmetros do modelo.
+
+As dimensões diagnósticas são:
+
+1. Faixas etárias derivadas de `DAYS_BIRTH`.
+2. Escolaridade, conforme `NAME_EDUCATION_TYPE`.
+3. Tipo de renda, conforme `NAME_INCOME_TYPE`.
+
+### 18.5. Contrato de saída e métricas
+
+O script gera um JSON com:
+
+- Identificação da análise e partição.
+- Identificação genérica do baseline.
+- Threshold utilizado.
+- Limites metodológicos de suporte amostral.
+- Métricas globais.
+- Métricas por dimensão e grupo elegível.
+- Limitações de interpretação.
+
+As métricas incluem:
+
+- Quantidade de registros.
+- Quantidade de positivos e negativos observados.
+- Quantidade de classificações positivas.
+- Prevalência histórica de inadimplência.
+- Taxa de classificação positiva.
+- Precision.
+- Recall/TPR.
+- FPR.
+- Matriz de confusão.
+
+A classe positiva representa inadimplência, não aprovação de crédito.
+
+Métricas condicionais com denominadores inferiores a 20 são representadas como `null`.
+
+### 18.6. Minimização e supressão
+
+A implementação não exporta identificadores individuais, linhas de clientes ou vetores de probabilidades individuais.
+
+Grupos com menos de 100 registros não têm suas métricas individuais publicadas. Suas contagens são consolidadas em uma categoria técnica denominada `SUPPRESSED_GROUPS`.
+
+A consolidação preserva a soma dos registros por dimensão, mas não divulga os nomes das categorias raras.
+
+O JSON é salvo dentro de `artifacts/`, diretório ignorado pelo Git. A escrita recusa sobrescrever um arquivo existente.
+
+Esses mecanismos reduzem exposição, mas não representam anonimização formal, controle de acesso completo, criptografia ou implementação automática de políticas de retenção.
+
+O relatório também não substitui a documentação de privacidade em `docs/governance.md`.
+
+### 18.7. Evidências quantitativas
+
+A análise foi executada na partição histórica de teste, com 46.127 registros.
+
+O threshold preservado foi `0.1406724340221902`.
+
+A matriz de confusão reproduziu exatamente os resultados oficiais:
+
+| Resultado | Quantidade |
+|---|---:|
+| TN | 37.262 |
+| FP | 5.141 |
+| FN | 2.242 |
+| TP | 1.482 |
+
+As três dimensões de agrupamento apresentaram cobertura integral dos 46.127 registros.
+
+Na dimensão etária, a soma das matrizes de confusão por grupo reproduziu integralmente a matriz global.
+
+Na dimensão de escolaridade, 27 registros foram consolidados por supressão. Na dimensão de tipo de renda, foram consolidados oito registros.
+
+As avaliações identificaram disparidades descritivas nas taxas de classificação positiva, recall e FPR. Os resultados detalhados constam de `docs/fairness-causality.md`.
+
+Essas diferenças não demonstram, isoladamente, discriminação ou efeitos causais.
+
+### 18.8. Governança, LGPD e responsabilidades
+
+A governança foi documentada em `docs/governance.md`, distinguindo controles existentes, recomendações e lacunas.
+
+Os temas abordados incluem:
+
+- Finalidade e categorias de dados.
+- Minimização e exposição de dados pessoais.
+- Riscos associados aos artefatos locais.
+- Possíveis bases legais, dependentes do contexto de tratamento.
+- Retenção e descarte propostos.
+- Segurança e responsabilidades organizacionais hipotéticas.
+- Direitos dos titulares e limitações do cenário acadêmico.
+- Riscos de vieses e necessidade de supervisão humana.
+
+O projeto não demonstra implantação organizacional desses controles nem certifica conformidade integral com a LGPD.
+
+### 18.9. Causalidade e relação com drift
+
+O Bloco 3 implementa mudanças sintéticas controladas nas distribuições de variáveis e detecção estatística de drift.
+
+O Bloco 5 documenta a distinção entre:
+
+- Associação estatística.
+- Sensibilidade das previsões a alterações nas entradas.
+- Mudança de distribuição.
+- Efeito causal sobre inadimplência real.
+
+As simulações não demonstram que alterações em renda ou crédito produziriam efeitos causais sobre a inadimplência observada.
+
+A identificação causal exigiria hipóteses adicionais, conhecimento do domínio, tratamento de fatores de confusão e um desenho apropriado de estudo.
+
+Nenhuma estimativa causal foi implementada nesta etapa.
+
+### 18.10. Testes e validações
+
+A implementação quantitativa foi validada com 14 testes unitários direcionados, incluindo:
+
+- Cálculo de taxas e matriz de confusão.
+- Tratamento de denominadores insuficientes.
+- Definição das faixas etárias.
+- Consolidação e ocultação de categorias raras.
+- Verificação de dimensões.
+- Rejeição de probabilidades e thresholds inválidos.
+- Restrição de exportação à pasta `artifacts/`.
+- Proteção contra sobrescrita.
+- Verificação do contrato de agregação.
+
+O Ruff lint e a formatação foram aprovados.
+
+A reprodução do baseline e a consistência dos agrupamentos também foram verificadas com os dados reais.
+
+A regressão completa executada durante a consolidação documental do Bloco 5 aprovou **378 testes automatizados** em 152,53 segundos. Ruff lint e formatação foram aprovados, com 79 arquivos Python formatados; `pip check` não encontrou incompatibilidades e `docker compose config --quiet` foi validado. O comando `git diff --check` não apresentou erros.
+
+### 18.11. Limitações e continuidade
+
+O Bloco 5 não implementa:
+
+- Auditoria regulatória completa.
+- Anonimização formal.
+- Exclusão automática de dados por prazo de retenção.
+- Controle de acesso centralizado.
+- Avaliação temporal de fairness.
+- Intervalos de confiança para as disparidades.
+- Estimativa de efeitos causais.
+- Mitigação automática de vieses.
+- Retreinamento ou alteração de threshold.
+- Monitoramento contínuo de fairness em produção.
+
+A análise utiliza dados históricos e grupos com diferentes prevalências e tamanhos amostrais.
+
+O Bloco 6 poderá utilizar a documentação e os resultados agregados como evidências da entrega, mas permanece responsável por sua própria integração demonstrativa e apresentação final.

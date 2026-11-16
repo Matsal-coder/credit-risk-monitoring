@@ -24,7 +24,7 @@ A solução deverá contemplar:
 - Monitoramento de infraestrutura e execução.
 - Documentação de privacidade, LGPD e governança.
 
-**Estado atual:** os Blocos 0 a 3 estão concluídos, e a infraestrutura original do Bloco 4 está integrada à `main`. A correção P0 de alertas Prometheus foi implementada e demonstrada na branch `fix/observability-alert-rules`, pendente de merge. O projeto possui três regras automáticas de alerta avaliadas pelo Prometheus, **sem notificações externas** e sem agendamento contínuo das CLIs. Governança e integração final permanecem nos Blocos 5 e 6.
+**Estado atual:** os Blocos 0 a 4 estão concluídos e integrados à `main`, incluindo a correção P0 das três regras de alerta Prometheus. O Bloco 5 possui documentação de governança e privacidade, além de análise quantitativa agregada de fairness no conjunto de teste, com avaliação de vieses e limitações de causalidade. O Bloco 6 permanece responsável pela integração demonstrativa e preparação da entrega final. O sistema não executa automaticamente as CLIs de scoring/drift, não possui notificações externas de alertas e não representa um ambiente produtivo de concessão de crédito.
 
 ## 3. Tecnologias
 
@@ -46,10 +46,13 @@ A solução deverá contemplar:
 - Ruff — lint e formatação.
 - Git e GitHub — controle de versões.
 
-### Etapas ainda planejadas
+### Governança e avaliação diagnóstica implementadas
 
-- Bloco 5 — governança e privacidade consolidadas.
-- Bloco 6 — integração demonstrativa e preparação da entrega.
+- Bloco 5 — documentação de governança, privacidade e LGPD; avaliação quantitativa agregada de fairness, testes automatizados e discussão de causalidade.
+
+### Etapa ainda planejada
+
+- Bloco 6 — integração demonstrativa, evidências finais e preparação da entrega.
 
 Os contratos Pandera e a inferência bloqueante pertencem ao Bloco 2; simulação de produção e detecção estatística de drift, ao Bloco 3. O Bloco 4 adiciona eventos operacionais persistidos, endpoint de métricas e visualização com Prometheus/Grafana. Os serviços são executados localmente; o processamento de lotes continua sob acionamento explícito.
 
@@ -177,7 +180,7 @@ Verificar consistência das dependências:
 python -m pip check
 ```
 
-A suíte inclui testes unitários e de integração dos Blocos 0 a 4, abrangendo preparação, treinamento, qualidade, inferência, simulação, drift, instrumentação, métricas e contratos de dashboards. A regressão pós-merge da infraestrutura do Bloco 4 aprovou **349 testes automatizados**. Os números de testes de seções históricas abaixo correspondem aos marcos de cada bloco.
+A suíte inclui testes unitários e de integração dos Blocos 0 a 5. A regressão completa realizada no encerramento técnico do Bloco 5 aprovou **378 testes automatizados**, incluindo os **14 testes de fairness** adicionados nesta fase. Ruff lint e formatação foram aprovados, com 79 arquivos Python formatados; `pip check` não identificou conflitos e `docker compose config --quiet` foi executado sem erros. Os números apresentados nas seções históricas correspondem aos marcos de cada etapa.
 
 ## 8. Roadmap de desenvolvimento
 
@@ -220,17 +223,25 @@ O projeto utiliza uma abordagem incremental, evitando antecipar dependências e 
 
 ### Resumo consolidado
 
-Estado consolidado após o merge `fc48d95` da infraestrutura do Bloco 4:
+Estado do projeto após o merge `47ef5e4`, correspondente à implementação de fairness e causalidade do Bloco 5:
 
 | Bloco | Estado |
 |---|---|
 | 0 — Fundação e arquitetura | Concluído |
 | 1 — Dados e baseline | Concluído |
 | 2 — Contratos e inferência bloqueante | Concluído |
-| 3 — Simulação e detecção de drift | Concluído, com documentação integrada |
-| 4 — Observabilidade | Infraestrutura integrada; alertas P0 demonstrados na branch de correção, integração pendente |
-| 5 — Governança e privacidade | Não iniciado |
+| 3 — Simulação e detecção de drift | Concluído |
+| 4 — Observabilidade e alertas | Concluído, incluindo correção P0 |
+| 5 — Governança, privacidade e fairness | Implementação e documentação integradas; consolidação final em andamento |
 | 6 — Integração e demonstração | Não iniciado |
+
+O Bloco 5 está organizado em três entregas:
+
+1. Governança, privacidade e LGPD — merge `9be0c6d`.
+2. Fairness quantitativo e causalidade — merge `47ef5e4`.
+3. Consolidação documental e arquitetural — em andamento.
+
+As duas primeiras entregas foram publicadas em `origin/main`. A regressão final do Bloco 5 aprovou 378 testes automatizados, com Ruff, pip check e Docker Compose validados.
 
 O baseline utiliza LogisticRegression com 17 features,
 e o threshold oficial é `0.1406724340221902`.
@@ -256,6 +267,8 @@ Referências técnicas:
 - [Reprodutibilidade](docs/reproducibility.md).
 - [Monitoramento de drift](docs/drift-monitoring.md).
 - [Observabilidade](docs/observability.md).
+- [Governança e privacidade](docs/governance.md).
+- [Fairness, vieses e causalidade](docs/fairness-causality.md).
 
 As seções históricas abaixo registram a evolução
 incremental do projeto. Os estados intermediários
