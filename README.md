@@ -1016,7 +1016,7 @@ Foram avaliadas três dimensões: faixas etárias, escolaridade e tipo de renda.
 
 - **Faixa etária:** taxa de classificação positiva de 30,09% para menores de 30 anos, contra 3,90% para pessoas de 60 anos ou mais.
 - **Escolaridade:** 24,01% em `Lower secondary`, contra 5,75% em `Higher education`.
-- **Tipo de renda:** 19,50% em `Working`, contra 4,31% em `Pensioner`.
+- **Tipo de renda:** foram observadas disparidades nas classificações e nas taxas de erro entre os grupos avaliados. As métricas dos grupos elegíveis estão disponíveis no relatório agregado, respeitando a supressão primária e complementar para impedir a reconstrução direta das contagens de categorias raras.
 
 A classe positiva corresponde à previsão de inadimplência (`TARGET=1`), não à aprovação de crédito.
 

@@ -110,25 +110,59 @@ def evaluate_groups(
     min_group_size: int = MIN_GROUP_SIZE,
     min_denominator: int = MIN_DENOMINATOR,
 ) -> list[dict]:
-    """Calcula metricas agregadas, consolidando grupos pequenos."""
+    """Avalia grupos aplicando supressao primaria e complementar.
+
+    Quando existem categorias pequenas, as metricas do maior grupo
+    elegivel tambem sao suprimidas. Isso impede que a subtracao
+    direta da matriz global pelas matrizes divulgadas isole
+    exclusivamente a matriz dos grupos pequenos.
+    """
     if len(labels) != len(y_true) or len(y_true) != len(y_pred):
         raise ValueError("Dimensoes inconsistentes na avaliacao por grupo.")
 
     normalized = labels.astype("string").fillna("MISSING")
-    results = []
-    suppressed_total = 0
 
-    for group in sorted(normalized.unique()):
-        mask = normalized.eq(group).to_numpy()
-        n = int(np.sum(mask))
+    group_sizes = {
+        str(group): int(normalized.eq(group).sum())
+        for group in sorted(normalized.unique())
+    }
 
-        if n < min_group_size:
-            suppressed_total += n
+    suppressed_total = sum(
+        size for size in group_sizes.values() if size < min_group_size
+    )
+
+    eligible_groups = {
+        group: size for group, size in group_sizes.items() if size >= min_group_size
+    }
+
+    complementary_group: str | None = None
+
+    if suppressed_total > 0 and eligible_groups:
+        # Maior grupo elegivel; desempate alfabetico deterministico.
+        complementary_group = min(
+            eligible_groups,
+            key=lambda group: (-eligible_groups[group], group),
+        )
+
+    results: list[dict] = []
+
+    for group, n in eligible_groups.items():
+        if group == complementary_group:
+            results.append(
+                {
+                    "group": group,
+                    "n": n,
+                    "status": "complementary_suppression",
+                    "metrics": None,
+                }
+            )
             continue
+
+        mask = normalized.eq(group).to_numpy()
 
         results.append(
             {
-                "group": str(group),
+                "group": group,
                 "n": n,
                 "status": "evaluated",
                 "metrics": aggregate_metrics(
