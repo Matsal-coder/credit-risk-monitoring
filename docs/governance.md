@@ -256,6 +256,7 @@ Foram identificados os seguintes mecanismos:
 11. Execução do exporter em ambiente de container com filesystem raiz somente leitura.
 12. Publicação de Prometheus e Grafana em loopback no host.
 13. Credencial administrativa do Grafana fornecida por arquivo local excluído do Git.
+14. Supressão complementar nas dimensões de fairness com categorias raras, impedindo a reconstrução direta das matrizes de confusão suprimidas por diferença entre totais globais e grupos publicados.
 
 Esses controles reduzem riscos específicos, mas não equivalem a uma arquitetura integral de proteção de dados para produção.
 
@@ -272,6 +273,8 @@ O campo `batch_id` possui restrições sintáticas, mas não dispõe de mecanism
 O snapshot HTML do Evidently utiliza exclusivamente as features selecionadas para monitoramento. Entretanto, pode incluir distribuições, estatísticas e categorias detalhadas, exigindo proteção contra divulgação indevida.
 
 Não foram comprovados mecanismos de detecção automática de PII, anonimização formal, criptografia de arquivos, gestão centralizada de segredos ou controle de acesso individualizado aos datasets locais.
+
+A supressão complementar reduz a exposição de contagens agregadas de grupos raros, mas não constitui anonimização formal. A divulgação conjunta do JSON com relatórios históricos ou tabelas detalhadas precisa de revisão para evitar vazamentos por combinação de fontes.
 
 ### 5.3. Controles adicionais propostos
 

@@ -110,10 +110,12 @@ def test_small_groups_are_suppressed():
 
     assert len(groups) == 2
 
-    assert groups[0]["group"] == "B"
-    assert groups[0]["n"] == 3
-    assert groups[0]["status"] == "evaluated"
-    assert groups[0]["metrics"]["n"] == 3
+    assert groups[0] == {
+        "group": "B",
+        "n": 3,
+        "status": "complementary_suppression",
+        "metrics": None,
+    }
 
     assert groups[1] == {
         "group": "SUPPRESSED_GROUPS",
@@ -251,9 +253,14 @@ def test_multiple_small_groups_are_combined_without_names():
     assert sum(group["n"] for group in groups) == 5
     assert len(groups) == 2
 
-    suppressed = groups[1]
+    assert groups[0] == {
+        "group": "Common",
+        "n": 3,
+        "status": "complementary_suppression",
+        "metrics": None,
+    }
 
-    assert suppressed == {
+    assert groups[1] == {
         "group": "SUPPRESSED_GROUPS",
         "n": 2,
         "status": "small_groups_combined",
@@ -261,3 +268,188 @@ def test_multiple_small_groups_are_combined_without_names():
     }
 
     assert all(group["group"] not in {"Rare A", "Rare B"} for group in groups)
+
+
+def test_suppressed_confusion_matrix_is_not_reconstructable():
+    """A matriz suprimida nao deve ser obtida por simples subtracao."""
+    labels = pd.Series(["Common A"] * 110 + ["Common B"] * 110 + ["Rare"] * 10)
+
+    y_true = np.tile([0, 1], 115)
+    y_pred = np.roll(y_true, 1)
+
+    groups = evaluate_groups(
+        labels,
+        y_true,
+        y_pred,
+        min_group_size=100,
+        min_denominator=1,
+    )
+
+    overall = confusion_counts(y_true, y_pred)
+
+    visible = [group for group in groups if group["metrics"] is not None]
+
+    residual = {
+        key: overall[key]
+        - sum(group["metrics"]["confusion_matrix"][key] for group in visible)
+        for key in ("tn", "fp", "fn", "tp")
+    }
+
+    rare_mask = labels.eq("Rare").to_numpy()
+    rare_counts = confusion_counts(
+        y_true[rare_mask],
+        y_pred[rare_mask],
+    )
+
+    assert residual != rare_counts
+
+
+def test_no_complementary_suppression_without_small_groups():
+    """Dimensoes sem grupos raros preservam as metricas."""
+    labels = pd.Series(["A"] * 120 + ["B"] * 130)
+
+    y_true = np.tile([0, 1], 125)
+    y_pred = y_true.copy()
+
+    groups = evaluate_groups(
+        labels,
+        y_true,
+        y_pred,
+        min_group_size=100,
+    )
+
+    assert len(groups) == 2
+    assert all(group["status"] == "evaluated" for group in groups)
+    assert all(group["metrics"] is not None for group in groups)
+
+    assert sum(group["n"] for group in groups) == len(labels)
+
+
+def test_complementary_suppression_selects_largest_group():
+    """O maior grupo e escolhido como supressao complementar."""
+    labels = pd.Series(["A"] * 120 + ["B"] * 180 + ["C"] * 150 + ["Rare"] * 10)
+
+    y_true = np.tile([0, 1], 230)
+    y_pred = y_true.copy()
+
+    groups = evaluate_groups(
+        labels,
+        y_true,
+        y_pred,
+        min_group_size=100,
+    )
+
+    by_name = {group["group"]: group for group in groups}
+
+    assert by_name["B"]["status"] == "complementary_suppression"
+    assert by_name["B"]["metrics"] is None
+    assert by_name["B"]["n"] == 180
+
+    assert by_name["A"]["status"] == "evaluated"
+    assert by_name["C"]["status"] == "evaluated"
+
+    assert by_name["SUPPRESSED_GROUPS"]["n"] == 10
+    assert by_name["SUPPRESSED_GROUPS"]["metrics"] is None
+
+    assert "Rare" not in by_name
+
+
+def test_complementary_suppression_tiebreak_is_deterministic():
+    """Empate entre maiores grupos e resolvido pelo nome."""
+    labels = pd.Series(["B"] * 110 + ["A"] * 110 + ["Rare"] * 10)
+
+    y_true = np.tile([0, 1], 115)
+    y_pred = y_true.copy()
+
+    groups = evaluate_groups(
+        labels,
+        y_true,
+        y_pred,
+        min_group_size=100,
+    )
+
+    by_name = {group["group"]: group for group in groups}
+
+    assert by_name["A"]["status"] == "complementary_suppression"
+    assert by_name["B"]["status"] == "evaluated"
+
+
+def test_all_small_groups_have_no_published_metrics():
+    """Sem grupo elegivel, nenhuma matriz por grupo e publicada."""
+    labels = pd.Series(["Rare A"] * 10 + ["Rare B"] * 15)
+
+    y_true = np.array([0, 1] * 12 + [0])
+    y_pred = y_true.copy()
+
+    groups = evaluate_groups(
+        labels,
+        y_true,
+        y_pred,
+        min_group_size=100,
+    )
+
+    assert groups == [
+        {
+            "group": "SUPPRESSED_GROUPS",
+            "n": 25,
+            "status": "small_groups_combined",
+            "metrics": None,
+        }
+    ]
+
+
+def test_public_report_prevents_direct_suppressed_matrix_recovery():
+    """Relatorio completo nao isola a matriz rara por subtracao."""
+    test, probabilities = make_synthetic_test_data()
+
+    # Mantem 120 registros e introduz uma categoria rara
+    # em escolaridade e tipo de renda.
+    test["NAME_EDUCATION_TYPE"] = ["Higher education"] * 110 + ["Rare education"] * 10
+    test["NAME_INCOME_TYPE"] = ["Working"] * 112 + ["Rare income"] * 8
+
+    report = build_fairness_report(
+        test,
+        probabilities,
+        threshold=0.5,
+    )
+
+    overall = report["overall"]["confusion_matrix"]
+
+    for dimension in ("education", "income_type"):
+        groups = report["groups"][dimension]
+
+        visible = [group for group in groups if group["metrics"] is not None]
+
+        assert visible == []
+
+        complementary = [
+            group for group in groups if group["status"] == "complementary_suppression"
+        ]
+
+        suppressed = [
+            group for group in groups if group["status"] == "small_groups_combined"
+        ]
+
+        assert len(complementary) == 1
+        assert len(suppressed) == 1
+
+        assert complementary[0]["metrics"] is None
+        assert suppressed[0]["metrics"] is None
+
+        # A matriz global permanece disponivel, mas nenhum
+        # detalhamento dessa dimensao permite isolar o grupo raro.
+        assert sum(overall.values()) == 120
+
+        assert complementary[0]["n"] + suppressed[0]["n"] == report["overall"]["n"]
+
+    # A dimensao etaria nao contem grupo raro e preserva
+    # sua avaliacao convencional.
+    assert all(
+        group["status"] == "evaluated" for group in report["groups"]["age_group"]
+    )
+
+    serialized = json.dumps(report)
+
+    assert "Rare education" not in serialized
+    assert "Rare income" not in serialized
+    assert "SK_ID_CURR" not in serialized

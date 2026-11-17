@@ -32,7 +32,7 @@ Não realiza treinamento, seleção de features, otimização de threshold, cali
 4. Gerar probabilidades com `predict_proba()`.
 5. Aplicar o threshold armazenado no artefato.
 6. Calcular métricas globais e por grupo.
-7. Consolidar grupos com tamanho insuficiente.
+7. Aplicar supressão primária para categorias com menos de 100 observações e supressão complementar determinística quando houver grupos raros.
 8. Exportar somente resultados agregados.
 
 A partição de teste não foi utilizada para selecionar um novo threshold ou retreinar o modelo.
@@ -96,9 +96,11 @@ Para cada grupo elegível, o script calcula:
 
 Neste projeto, a classe positiva corresponde à inadimplência. Portanto, a taxa de classificação positiva indica a frequência de classificações como inadimplente, não a taxa de aprovação de crédito.
 
-O script define `null` para métricas condicionais com denominadores inferiores a 20. Grupos com menos de 100 observações não têm suas métricas divulgadas individualmente.
+O script define null para métricas condicionais com denominadores inferiores a 20. Grupos com menos de 100 observações são consolidados em SUPPRESSED_GROUPS, sem divulgação de nomes ou métricas individuais.
 
-Os limites de 20 e 100 são convenções diagnósticas do projeto. Não garantem significância estatística, precisão ou anonimização.
+Quando existe pelo menos um agrupamento raro, aplica-se também supressão complementar: o maior grupo elegível da dimensão tem suas métricas omitidas, mantendo somente seu nome, tamanho e status complementary_suppression. Em caso de empate de tamanho, a escolha é alfabética e determinística.
+
+A supressão complementar impede que a simples diferença entre a matriz global e as matrizes divulgadas isole as contagens dos grupos raros. Os limites adotados são convenções diagnósticas e não constituem prova de anonimização, significância estatística ou ausência de riscos de inferência por fontes auxiliares.
 
 ## 6. Resultados observados
 
@@ -121,37 +123,31 @@ Esses resultados justificam investigação adicional, mas não permitem concluir
 
 ### 6.2 Escolaridade
 
-| Grupo | N | Prevalência | Classificação positiva | Recall | FPR |
-|---|---:|---:|---:|---:|---:|
-| Higher education | 11.379 | 5,40% | 5,75% | 22,93% | 4,77% |
-| Incomplete higher | 1.489 | 8,53% | 14,24% | 37,01% | 12,11% |
-| Lower secondary | 558 | 10,75% | 24,01% | 55,00% | 20,28% |
-| Secondary / secondary special | 32.674 | 8,94% | 17,19% | 43,16% | 14,64% |
+A avaliação identificou diferenças de desempenho preditivo e de frequência de classificações positivas entre os níveis de escolaridade observados.
 
-Há diferenças nas métricas entre os níveis de escolaridade.
+As disparidades devem ser interpretadas considerando diferenças de prevalência de inadimplência, representatividade amostral e possíveis relações entre escolaridade, renda e outras características socioeconômicas.
 
-O grupo `Lower secondary` apresenta classificação positiva de aproximadamente 24,01%, contra 5,75% em `Higher education`.
+Uma categoria rara, com 27 observações, foi consolidada em `SUPPRESSED_GROUPS`.
 
-A comparação exige cautela, especialmente pela diferença de tamanho amostral e composição entre os grupos.
+Para impedir a reconstrução das contagens suprimidas por subtração, a versão publicável também omite as métricas do maior grupo elegível da dimensão, identificado como `Secondary / secondary special`.
 
-Uma categoria rara, contendo 27 observações, teve suas métricas consolidadas e suprimidas do detalhamento.
+As métricas dos demais grupos elegíveis permanecem disponíveis no relatório JSON agregado, permitindo análise diagnóstica sem exposição das matrizes protegidas.
+
+A supressão complementar reduz o risco de inferência por diferença, mas não constitui garantia de anonimização formal.
 
 ### 6.3 Tipo de renda
 
-| Grupo | N | Prevalência | Classificação positiva | Recall | FPR |
-|---|---:|---:|---:|---:|---:|
-| Commercial associate | 10.718 | 7,56% | 12,95% | 36,91% | 10,99% |
-| Pensioner | 8.358 | 5,16% | 4,31% | 19,03% | 3,51% |
-| State servant | 3.264 | 5,42% | 7,23% | 26,55% | 6,12% |
-| Working | 23.779 | 9,69% | 19,50% | 45,70% | 16,69% |
+A avaliação identificou diferenças nas taxas de classificação positiva e nos indicadores de desempenho entre categorias de tipo de renda.
 
-Observam-se diferenças na classificação positiva e nas taxas de erro.
+Essas diferenças devem ser analisadas em conjunto com a prevalência observada de inadimplência, o tamanho dos grupos e a possível influência de características socioeconômicas correlacionadas.
 
-O grupo `Working` apresenta taxa de classificação positiva de 19,50%, em comparação a 4,31% para `Pensioner`.
+Três categorias raras, totalizando oito observações, foram consolidadas em `SUPPRESSED_GROUPS`, sem divulgação individual de seus nomes ou métricas.
 
-Esses grupos também apresentam prevalências distintas de inadimplência, o que limita interpretações diretas das diferenças de classificação.
+Como medida de proteção complementar, o grupo `Working`, por apresentar o maior número de observações entre os grupos elegíveis, teve suas métricas omitidas na versão publicável.
 
-Três categorias raras, somando oito observações, foram consolidadas em um agrupamento técnico sem exposição dos nomes individuais.
+O relatório JSON mantém os indicadores dos demais grupos elegíveis, preservando a possibilidade de investigação de disparidades preditivas.
+
+A análise permanece descritiva e não permite estabelecer relações causais nem concluir pela existência de discriminação.
 
 ## 7. Consistência e controle de qualidade
 
@@ -160,12 +156,12 @@ Foram verificadas as seguintes propriedades:
 1. Cada uma das três dimensões representa as 46.127 observações do conjunto de teste.
 2. A matriz de confusão global reproduz exatamente o baseline.
 3. A soma das matrizes de confusão por idade reproduz a matriz global.
-4. O relatório preserva o threshold oficial.
-5. As categorias raras são consolidadas em `SUPPRESSED_GROUPS`.
-6. O JSON não contém identificadores individuais nem vetores de scores.
+4. O relatório preserva o threshold oficial e a matriz de confusão global.
+5. Categorias raras são consolidadas em SUPPRESSED_GROUPS.
+6. Quando existem categorias raras, um grupo elegível adicional recebe status complementary_suppression e suas métricas são omitidas.
 7. O script não retreina o modelo.
 
-Nas dimensões de escolaridade e tipo de renda, a matriz completa não pode ser reconstruída somente a partir do JSON publicado, pois os resultados dos grupos pequenos são intencionalmente suprimidos.
+A versão anterior do JSON permitia reconstruir as matrizes agregadas dos grupos raros mediante subtração. A versão corrigida impede essa reconstrução direta por supressão complementar. Essa proteção não garante anonimização formal nem impede inferências baseadas em informações externas.
 
 ## 8. Interpretação de fairness
 
@@ -207,7 +203,9 @@ O relatório exporta resultados agregados, sem incluir `SK_ID_CURR`, linhas indi
 
 Como mecanismo adicional de minimização, categorias com menos de 100 observações são consolidadas em `SUPPRESSED_GROUPS`, sem exposição individual de seus nomes ou matrizes de confusão.
 
-O agrupamento consolidado mantém a contagem total necessária à consistência do relatório.
+Categorias com menos de 100 observações são consolidadas em SUPPRESSED_GROUPS. Havendo categorias raras, as métricas do maior grupo elegível da mesma dimensão também são ocultadas, evitando que o residual da matriz global corresponda exclusivamente às categorias suprimidas.
+
+As contagens totais e os tamanhos dos grupos podem continuar disponíveis para verificações de consistência, mas não devem ser interpretados como garantia de anonimização. A publicação conjunta de relatórios históricos, tabelas detalhadas ou fontes auxiliares pode comprometer a proteção e exige revisão prévia.
 
 Essa técnica reduz a divulgação de detalhes de grupos raros, mas **não garante anonimização formal** nem elimina todos os riscos de inferência.
 
@@ -280,7 +278,9 @@ Não é recomendada a alteração automática do threshold por grupo com base so
 
 ## 12. Testes e evidências
 
-A implementação foi validada com 14 testes unitários específicos, abrangendo:
+## 12. Testes e evidências
+
+A implementação foi validada com testes unitários específicos, abrangendo:
 
 - Cálculo de taxas e matriz de confusão.
 - Denominadores insuficientes.
@@ -292,6 +292,18 @@ A implementação foi validada com 14 testes unitários específicos, abrangendo
 - Ausência de identificadores e scores individuais no relatório sintético.
 - Restrição da exportação à pasta `artifacts/`.
 - Proteção contra sobrescrita acidental.
+- Aplicação de supressão complementar quando existem categorias raras.
+- Seleção determinística do maior grupo elegível, incluindo desempate.
+- Preservação das métricas em dimensões sem categorias raras.
+- Tratamento de dimensões sem grupos elegíveis para divulgação.
+- Prevenção da reconstrução direta de matrizes suprimidas por diferença.
+- Verificação da estrutura do relatório público utilizando dados sintéticos.
+
+Os testes utilizam dados sintéticos para validar as regras de supressão, sem depender da exposição de registros individuais do dataset original.
+
+A regressão global do projeto foi executada após a implementação da correção, com 407 testes aprovados.
+
+Os resultados dos testes demonstram o funcionamento da supressão complementar nos cenários avaliados, sem constituir prova de anonimização ou proteção absoluta contra inferências baseadas em fontes auxiliares.
 
 O Ruff check foi aprovado e os arquivos foram formatados.
 
