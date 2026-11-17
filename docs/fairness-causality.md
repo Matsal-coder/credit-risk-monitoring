@@ -278,8 +278,6 @@ Não é recomendada a alteração automática do threshold por grupo com base so
 
 ## 12. Testes e evidências
 
-## 12. Testes e evidências
-
 A implementação foi validada com testes unitários específicos, abrangendo:
 
 - Cálculo de taxas e matriz de confusão.

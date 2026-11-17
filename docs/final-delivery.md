@@ -1,10 +1,10 @@
 # Entrega final — Credit Risk Monitoring | Tech Challenge FIAP — Fase 4
 
 **Tipo:** guia de entrega e checklist de evidências
-**Status deste documento:** preparado para validação na branch `docs/final-delivery-star`
+**Status deste documento:** integrado à `main`; correções AUD-001/AUD-002 publicadas; fechamento audiovisual pendente
 **Escopo:** integração e documentação de uma demonstração acadêmica, não implantação produtiva
 
-> **Estado de aceite:** a integração técnica dos Blocos 0–5 e as evidências operacionais do Bloco 6 foram verificadas nas sessões registradas. O vídeo STAR ainda precisa ser gravado, editado e publicado; a auditoria independente prevista pelo Chat Arquiteto ainda não foi realizada. Não declarar entrega acadêmica integralmente concluída até comprovação desses itens e revisão final.
+> **Estado de aceite (16/11/2026):** as evidências operacionais do Bloco 6 foram verificadas nas sessões registradas. As correções AUD-001 (`f6a233d`) e AUD-002 (`7e9c291`) estão publicadas na `main`; a segunda auditoria independente Codex, read-only, reportou **apto para gravação e entrega técnica**, sem P0/P1 remanescente. Esse parecer não comprova gravação, publicação ou submissão acadêmica do vídeo STAR, que continuam pendentes.
 
 ## 1. Como navegar pela entrega
 
@@ -54,7 +54,7 @@ A rejeição por qualidade **não** é falha operacional; ela bloqueia a inferê
 | Moderado (`block6-drift-moderate-01`) | 23.063 | 46.127 | 0/16 | `not_detected`, exit 0 |
 | Forte (`block6-drift-strong-01`) | 46.127 | 46.127 | **2/16** | `detected`, exit 0 |
 
-No cenário forte, `AMT_CREDIT` e `AMT_INCOME_TOTAL` foram sinalizadas por **Wasserstein distance (normed)**, com limiar **0,1**; `drift_share=0.125` (12,5%). A detecção não prova concept drift, inadimplência futura nem degradação preditiva em ambiente real.
+No cenário forte, `AMT_CREDIT` e `AMT_INCOME_TOTAL` foram sinalizadas por **Wasserstein distance (normed)**, com limiar **0,1**; `drift_share=0.125` (12,5%). **O alerta do projeto sinaliza drift quando pelo menos uma feature é detectada; o status global do preset padrão do Evidently emprega o critério de 50% de features, de modo que o HTML nativo pode apresentar conclusão global diferente do JSON/alerta do projeto (2 de 16 features no cenário forte).** A detecção não prova concept drift, inadimplência futura nem degradação preditiva em ambiente real.
 
 ### 3.3. Observabilidade
 
@@ -72,9 +72,9 @@ No cenário forte, `AMT_CREDIT` e `AMT_INCOME_TOTAL` foram sinalizadas por **Was
 
 - Modelo: LogisticRegression, 17 features, threshold persistido **`0.1406724340221902`**.
 - Fairness descritiva offline sobre **46.127** registros do teste; **6.623 previsões positivas** (não defaults observados).
-- Três dimensões agregadas: faixa etária (4 grupos avaliados), escolaridade (4 avaliados e 1 agrupamento suprimido), tipo de renda (4 avaliados e 1 agrupamento suprimido).
-- Grupos pequenos combinados: 27 observações em escolaridade e 8 em tipo de renda, ambos com `metrics=None`. Limiar de grupo: **100**; denominador condicional mínimo: **20**.
-- Seis limitações estão no JSON local; análise não estabelece discriminação causal, anonimização formal ou conformidade automática com a LGPD.
+- Evidência histórica do Bloco 6: faixa etária (4 grupos avaliados), escolaridade e renda (4 avaliados e 1 agrupamento raro combinado em cada dimensão). **O JSON então inspecionado precede o AUD-002 e não deve ser usado na divulgação.**
+- Após o AUD-002, a versão publicável aplica supressão complementar do maior grupo elegível, além de `SUPPRESSED_GROUPS` com `metrics=null`. O novo JSON pós-correção foi gerado localmente em artifacts/fairness_star_7e9c291.json e validado por inspeção agregada (AUD-010): 46.127 observações, 27 registros suprimidos em escolaridade e oito em tipo de renda, com metrics=null tanto para SUPPRESSED_GROUPS quanto para os grupos de supressão complementar. O artefato é local, não versionado e não substitui o histórico.
+- Limiar de grupo: **100**; denominador condicional mínimo: **20**. A análise não estabelece discriminação causal, anonimização formal ou conformidade automática com a LGPD.
 
 ## 4. Roteiro de reprodução para avaliador
 
@@ -91,9 +91,31 @@ docker compose config --quiet
 git diff --check
 ```
 
-**Último resultado observado antes da criação deste documento:** pós-merge `456f6c4`, **378 testes aprovados**, Ruff e pip check aprovados, Compose válido, working tree limpa; `main` publicada e sincronizada com `origin/main`. Uma nova regressão será necessária **após o merge final** da branch `docs/final-delivery-star`.
+**Evidências em momentos distintos:** a validação histórica do Bloco 6 registrou **378 testes**; depois da correção AUD-001, o usuário reportou **401 testes**; após AUD-002, **407 testes aprovados**, Ruff lint e formatação, e `pip check` aprovados. Esses são resultados reportados das execuções locais, **não uma reexecução independente pela segunda auditoria**. A `main` foi publicada em `7e9c291`; executar uma nova regressão no fechamento desta branch antes do push final.
 
-### 4.2. Subir e verificar infraestrutura
+### 4.2. Criar o SQLite operacional **antes** do Compose (AUD-006)
+
+Após preparar `data/processed/reference.csv`, `data/processed/test.csv` e `artifacts/baseline_model.joblib` conforme o README, executar **uma CLI instrumentada completa** para inicializar o schema e registrar um evento. Apenas criar diretórios ou um arquivo SQLite vazio não é suficiente.
+
+```bash
+mkdir -p artifacts/observability artifacts/block6_evidence
+
+python scripts/monitor_drift.py \
+  --reference data/processed/reference.csv \
+  --model artifacts/baseline_model.joblib \
+  --batch-id precompose-strong-unique-01 \
+  --json-output artifacts/block6_evidence/precompose_strong_unique_01.json \
+  --html-output artifacts/block6_evidence/precompose_strong_unique_01.html \
+  --events-db artifacts/observability/events.sqlite3 \
+  simulate \
+  --production-prepared data/processed/test.csv \
+  --scenario strong \
+  --seed 642
+```
+
+Este comando produz relatórios JSON/HTML locais e um SQLite válido, após execução bem-sucedida (`exit 0` no cenário forte esperado). **Não iniciar o Compose se a CLI falhar.** Se esses destinos já existirem, escolher novos `batch-id` e nomes de relatórios; não sobrescrever arquivos. O diretório `artifacts/` e o SQLite são locais e ignorados pelo Git. Para a stack, preparar também `.env` com `GRAFANA_ADMIN_PASSWORD` conforme [Observabilidade](observability.md), sem exibir ou versionar a senha.
+
+### 4.3. Subir e verificar infraestrutura
 
 ```bash
 docker compose up -d
@@ -102,7 +124,7 @@ docker compose ps
 
 O serviço Prometheus é exposto localmente em `http://127.0.0.1:9090`, e o Grafana em `http://127.0.0.1:3000` (acesso autenticado). A configuração versionada é `compose.yaml`.
 
-### 4.3. Simulações e validação bloqueante
+### 4.4. Simulações e validação bloqueante
 
 Os comandos completos, com opções e caminhos utilizados, estão em [Evidências end-to-end — seção 11](end-to-end-evidence.md). Para **novas** execuções, atribuir novos `--batch-id` e nomes de saída, porque a CLI pode recusar sobrescritas. Exemplo para simulação forte:
 
@@ -154,11 +176,13 @@ Legenda: `[x]` comprovado; `[ ]` pendente; `[N/A]` não se aplica ao protótipo 
 - [x] Exporter, target Prometheus `up`, regras Promtool válidas.
 - [x] Alerta de drift em `firing` observado diretamente; regras de falha/qualidade saudáveis porém inativas naquela consulta.
 - [x] Oito painéis Grafana observados em interface autenticada.
-- [x] Fairness agregado, limiares de supressão e limitações documentados.
+- [x] Fairness agregado, supressão primária e complementar (AUD-002) e limitações documentados; novo JSON pós-correção gerado e inspecionado localmente (AUD-010).
 - [x] Seção própria de Governança e Causalidade no README.
 - [x] `docs/end-to-end-evidence.md` publicado na `main` no merge `456f6c4`.
-- [ ] `docs/final-delivery.md` e referências finais de README/arquitetura integrados à `main` e publicados (a validar nesta branch).
-- [ ] Regressão completa e integridade Git após o **último** merge final.
+- [x] `docs/final-delivery.md` e referências finais integrados à `main` no merge `8612ca8`.
+- [x] AUD-001 integrado no merge `f6a233d`; AUD-002 integrado no merge `7e9c291`.
+- [x] Regressão local reportada após AUD-002: **407 testes aprovados**, Ruff e `pip check` aprovados (não constitui nova execução independente da auditoria).
+- [ ] Regressão e validação de integridade finais **após os ajustes desta branch**; registrar o resultado somente depois da execução.
 
 ### 5.2. Vídeo e submissão
 
@@ -168,7 +192,7 @@ Legenda: `[x]` comprovado; `[ ]` pendente; `[N/A]` não se aplica ao protótipo 
 - [ ] Vídeo editado e publicado em URL acessível ao avaliador.
 - [ ] Links finais do repositório GitHub e do vídeo publicado verificados e preparados para envio à FIAP.
 - [ ] Materiais submetidos pelo usuário no canal/plataforma acadêmica exigido.
-- [ ] Auditoria independente read-only por Codex coordenada pelo Chat Arquiteto, se mantida no fluxo de aceite do projeto.
+- [x] Segunda auditoria independente Codex read-only reportada pelo Chat Arquiteto: **apto para gravação e entrega técnica**, sem P0/P1 remanescente; isso não encerra vídeo, publicação nem submissão.
 
 ## 6. Segurança na entrega
 
@@ -185,17 +209,19 @@ A exclusão do Git não garante anonimização nem criptografia. A política de 
 - Sem notificações externas de alertas/Alertmanager.
 - Fairness é diagnóstico descritivo, não inferência causal nem decisão real de crédito.
 - Dados, modelos e artefatos locais devem ser gerados ou obtidos no ambiente de reprodução; não fazem parte dos arquivos públicos versionados.
+- AUD-003 (leitura SQLite do exporter), AUD-004 (sanitização da CLI de drift sem banco) e AUD-008 (versões de dependências) seguem registrados como limitações/manutenção futura, conforme decisão do fechamento; não foram implementados nesta rodada.
+- AUD-009 (CSV parcial de scores na falha de escrita) permanece uma limitação operacional; **não usar `--scores-output` na gravação do vídeo** até uma correção específica.
 
 ## 8. Estado de entrega e próximos responsáveis
 
 | Responsabilidade | Estado |
 |---|---|
 | Desenvolvimento e evidências operacionais do Bloco 6 | Verificados |
-| Documentação desta branch e atualização do README | Em preparação/validação |
+| Documentação de entrega anterior | Integrada à `main` em `8612ca8`; limpeza documental atual em validação |
 | Roteiro STAR | Disponibilizado em arquivo separado; produção pendente |
 | Gravação/edição/publicação e URL | **Pendente; conduzido fora deste chat** |
-| Regressão e publicação pós-merge final | Pendente |
-| Relatório final `relatorio_bloco_6.txt` para o Chat Arquiteto | Pendente de consolidação após o merge |
-| Auditoria independente final | A cargo do Chat Arquiteto; não realizada neste bloco |
+| Regressão 407 testes após AUD-002 | Reportada; nova validação pós-limpeza pendente |
+| Relatório do Bloco 6 | Entrega anterior documentada; relatório desta limpeza ainda pendente |
+| Segunda auditoria Codex read-only | Reportada como apta para gravação/entrega técnica, sem P0/P1 remanescente |
 
 **Critério de comunicação:** após conclusão da documentação técnica, a expressão adequada é **“pronto para gravação”**. Não declarar “vídeo entregue” nem “Tech Challenge totalmente concluído” sem comprovação do vídeo publicado e dos demais passos acadêmicos.

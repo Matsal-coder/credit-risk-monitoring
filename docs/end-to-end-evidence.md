@@ -14,7 +14,7 @@ A demonstração abrange:
 6. Governança, fairness agregado, privacidade e limitações.
 7. Rastreabilidade dos critérios acadêmicos e reprodutibilidade.
 
-O objetivo é comprovar a integração de componentes existentes. Não foram introduzidas novas funcionalidades nesta etapa.
+O objetivo original do Bloco 6 foi comprovar a integração de componentes existentes. Posteriormente, AUD-001 (`f6a233d`) e AUD-002 (`7e9c291`) foram corrigidos e publicados na `main`; as observações históricas deste documento devem ser diferenciadas das correções posteriores.
 
 Os resultados descritos como **observados no Bloco 6** foram obtidos por execuções e consultas locais efetivamente realizadas. Resultados históricos são identificados separadamente.
 
@@ -455,9 +455,20 @@ Documentação de referência: [Observabilidade](observability.md).
 
 ### 9.1. Artefato agregado
 
-Arquivo local: `artifacts/fairness_test_aggregated.json`.
+Arquivo **histórico, anterior ao AUD-002**: `artifacts/fairness_test_aggregated.json`.
 
-Sua existência, leitura como JSON e exclusão do versionamento Git foram confirmadas.
+Sua existência, leitura como JSON e exclusão do versionamento Git foram confirmadas **na sessão do Bloco 6**.
+
+**Evidência posterior — AUD-010 (16/11/2026):** o usuário gerou localmente `artifacts/fairness_star_7e9c291.json`, utilizando a implementação corrigida após AUD-002. A inspeção agregada confirmou:
+
+- 46.127 observações no conjunto de teste.
+- Escolaridade: agrupamento raro com 27 registros.
+- Tipo de renda: agrupamento raro com oito registros.
+- Presença de `SUPPRESSED_GROUPS` e `complementary_suppression` nas duas dimensões.
+- `metrics=null` nos agrupamentos raros e complementares.
+- Consistência entre a soma dos tamanhos dos grupos e o total de observações.
+
+O novo arquivo permanece local, ignorado pelo Git, e não sobrescreveu o relatório histórico. Essa evidência foi reportada pelo usuário após o Bloco 6, não sendo uma execução independente da auditoria Codex.
 
 Indicadores observados:
 
@@ -472,7 +483,7 @@ As 6.623 classificações positivas representam predições do baseline, não de
 
 ### 9.2. Dimensões e supressão
 
-| Dimensão | Grupos avaliados | Grupos pequenos combinados |
+| Dimensão | Grupos com métricas na inspeção histórica pré-AUD-002 | Grupos pequenos combinados |
 |---|---:|---:|
 | Faixa etária | 4 | 0 |
 | Escolaridade | 4 | 1 |
@@ -485,7 +496,13 @@ Em ambos os casos:
 - `status=small_groups_combined`;
 - `metrics=None`.
 
-Logo, não foram publicadas métricas individuais para esses agrupamentos no artefato inspecionado.
+Apesar de `metrics=None` nos agrupamentos raros, a matriz global e as matrizes dos demais grupos **permitiam recuperar suas contagens por diferença** na versão histórica anterior ao AUD-002.
+
+A versão corrigida aplica supressão complementar do maior grupo elegível nas dimensões com categorias raras.
+
+A inspeção do novo arquivo `artifacts/fairness_star_7e9c291.json`, realizada em 16/11/2026 e reportada pelo usuário, confirmou a presença dessa proteção nas dimensões de escolaridade e tipo de renda.
+
+Esse mecanismo impede a reconstrução direta das contagens raras por simples subtração das matrizes publicadas, mas não garante anonimização formal nem elimina riscos associados a fontes auxiliares ou versões históricas.
 
 Os menores tamanhos entre grupos avaliados foram:
 
@@ -554,7 +571,9 @@ Esses arquivos não são publicados no repositório Git.
 
 Para reconstruir os pré-requisitos, seguir o README e [Reprodutibilidade](reproducibility.md).
 
-### 11.2. Subir a observabilidade
+### 11.2. Preparar SQLite e subir a observabilidade
+
+**Em um clone limpo, antes de `docker compose up`, executar a sequência completa da [seção 4.2 do guia de entrega](final-delivery.md)**: criar os diretórios locais e realizar uma execução instrumentada que inicialize o schema e persista um evento. Arquivo SQLite vazio não basta. Preparar também o `.env` local para o Grafana. Somente após sucesso da CLI, iniciar a stack:
 
 ```bash
 docker compose up -d
@@ -639,7 +658,7 @@ O Grafana exige a autenticação configurada no ambiente.
 
 ### 11.7. Verificações automatizadas
 
-A regressão completa deve ser executada antes do merge final da branch:
+A regressão global de **407 testes aprovados** foi reportada pelo usuário após AUD-002 (merge `7e9c291`), não reexecutada de modo independente pela segunda auditoria. Reexecutar o gate de qualidade na conclusão dos ajustes de entrega:
 
 ```bash
 python -m pytest -q
@@ -652,7 +671,7 @@ git diff --check
 
 Prometheus deve ser validado também com os comandos `promtool` estabelecidos em [Observabilidade](observability.md).
 
-As evidências da regressão final desta branch serão registradas na entrega depois de executadas. Este documento não antecipa resultados ainda não obtidos.
+Os resultados da limpeza final desta branch permanecem pendentes até a execução efetiva. Não inferir aprovação de uma rodada ainda não realizada a partir dos 407 testes históricos.
 
 ## 12. Entrega acadêmica e vídeo STAR
 
@@ -665,7 +684,7 @@ Estrutura prevista:
 - **Action:** demonstrar validação Pandera, simulações Evidently, métricas, alertas e fairness agregado.
 - **Result:** apresentar resultados observados, reprodutibilidade e limitações.
 
-O roteiro detalhado será elaborado em etapa específica da entrega final.
+O roteiro STAR foi preparado externamente ao repositório e reportado como disponível para a etapa audiovisual; sua gravação, edição e publicação ainda não foram comprovadas.
 
 A gravação, edição e publicação do vídeo serão realizadas fora deste chat executor.
 
@@ -681,8 +700,10 @@ Nenhum link de vídeo publicado foi confirmado durante a preparação desta evid
 6. As falhas operacionais foram verificadas em eventos históricos; não foram recriadas nesta etapa.
 7. Fairness é analisado por métricas agregadas, sem inferência causal nem certificação LGPD.
 8. Os artefatos locais ignorados pelo Git precisam ser gerados ou disponibilizados no ambiente de reprodução.
-9. O vídeo STAR permanece pendente de roteiro, produção e publicação em etapa posterior.
-10. O resultado da regressão final desta branch ainda precisa ser anexado ao relatório de entrega.
+9. O roteiro STAR foi reportado como preparado externamente; **gravação, edição e publicação permanecem pendentes**.
+10. O resultado da regressão após esta limpeza documental ainda precisa ser comprovado.
+11. AUD-001 e AUD-002 foram integrados nos merges `f6a233d` e `7e9c291`; a segunda auditoria Codex read-only reportou aptidão técnica para gravação, mas não equivale à submissão acadêmica.
+12. AUD-003, AUD-004 e AUD-008 foram classificados como manutenção futura nesta rodada, e AUD-009 (CSV parcial de scores) não foi implementado; não utilizar `--scores-output` no vídeo.
 
 ## 14. Documentação relacionada
 
